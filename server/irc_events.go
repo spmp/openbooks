@@ -26,7 +26,7 @@ func (server *server) NewIrcEventHandler(client *Client) core.EventHandler {
 // searchResultHandler downloads from DCC server, parses data, and sends data to client
 func (c *Client) searchResultHandler(downloadDir string) core.HandlerFunc {
 	return func(text string) {
-		extractedPath, err := core.DownloadExtractDCCString(filepath.Join(downloadDir, "books"), text, nil)
+		extractedPath, err := core.DownloadExtractDCCString(downloadDir, text, nil)
 		if err != nil {
 			c.log.Println(err)
 			c.send <- newErrorResponse("Error when downloading search results.")
@@ -66,7 +66,7 @@ func (c *Client) searchResultHandler(downloadDir string) core.HandlerFunc {
 // bookResultHandler downloads the book file and sends it over the websocket
 func (c *Client) bookResultHandler(downloadDir string, disableBrowserDownloads bool, postDownloadHook string, postDownloadHookTimeout time.Duration) core.HandlerFunc {
 	return func(text string) {
-		extractedPath, err := core.DownloadExtractDCCString(filepath.Join(downloadDir, "books"), text, nil)
+		extractedPath, err := core.DownloadExtractDCCString(downloadDir, text, nil)
 		if err != nil {
 			c.log.Println(err)
 			c.send <- newErrorResponse("Error when downloading book.")
