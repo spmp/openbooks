@@ -32,6 +32,12 @@ These options apply to both Server and CLI mode.
 | `--port`/`-p`            | `5228`      | The port that the server listens on.                      |
 | `--rate-limit`/`-r`      | `10`        | Seconds to wait between IRC search requests. (minimum 10) |
 
+`--post-download-hook` notes:
+
+- The hook inherits container environment variables and receives these additional variables: `OPENBOOKS_FILE_PATH`, `OPENBOOKS_FILENAME`, `OPENBOOKS_AUTHOR`, and `OPENBOOKS_TITLE`.
+- The hook is executed directly, so the configured value must be an executable path (it does not parse shell arguments).
+- Hook failures or timeouts are logged and do not interrupt download delivery.
+
 ## CLI Mode Options
 
 | Flag         | Default           | Description                                          |
