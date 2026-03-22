@@ -145,7 +145,7 @@ export default function BookTable({ books }: BookTableProps) {
         size: cols(1),
         enableColumnFilter: false,
         cell: ({ row }) => (
-          <DownloadButton book={row.original.full}></DownloadButton>
+          <DownloadButton book={row.original}></DownloadButton>
         )
       })
     ];
@@ -254,12 +254,12 @@ export default function BookTable({ books }: BookTableProps) {
   );
 }
 
-function DownloadButton({ book }: { book: string }) {
+function DownloadButton({ book }: { book: BookDetail }) {
   const dispatch = useAppDispatch();
 
   const [clicked, setClicked] = useState(false);
   const isInFlight = useSelector((state: RootState) =>
-    state.state.inFlightDownloads.includes(book)
+    state.state.inFlightDownloads.includes(book.full)
   );
 
   // Prevent hitting the same button multiple times

@@ -101,7 +101,11 @@ func (c *Client) sendSearchRequest(s *SearchRequest, server *server) {
 
 // handle DownloadRequests by sending the request to the book server
 func (c *Client) sendDownloadRequest(d *DownloadRequest) {
-	c.queueDownloadMetadata(parseDownloadMetadata(d.Book))
+	if d.Author != "" || d.Title != "" {
+		c.queueDownloadMetadata(downloadMetadata{Author: d.Author, Title: d.Title})
+	} else {
+		c.queueDownloadMetadata(parseDownloadMetadata(d.Book))
+	}
 	core.DownloadBook(c.irc, d.Book)
 	c.send <- newStatusResponse(NOTIFY, "Download request received.")
 }

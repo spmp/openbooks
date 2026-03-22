@@ -5,7 +5,7 @@ import {
   PayloadAction
 } from "@reduxjs/toolkit";
 import { addHistoryItem, HistoryItem, updateHistoryItem } from "./historySlice";
-import { MessageType, SearchResponse } from "./messages";
+import { BookDetail, MessageType, SearchResponse } from "./messages";
 import { AppDispatch, RootState } from "./store";
 
 interface AppState {
@@ -64,12 +64,12 @@ const sendMessage = createAction("socket/send_message", (message: any) => ({
 
 const sendDownload = createAsyncThunk(
   "state/send_download",
-  (book: string, { dispatch }) => {
-    dispatch(addInFlightDownload(book));
+  (book: BookDetail, { dispatch }) => {
+    dispatch(addInFlightDownload(book.full));
     dispatch(
       sendMessage({
         type: MessageType.DOWNLOAD,
-        payload: { book }
+        payload: { book: book.full, author: book.author, title: book.title }
       })
     );
   }
