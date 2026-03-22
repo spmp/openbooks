@@ -49,6 +49,8 @@ type Config struct {
 	UserName                string
 	Persist                 bool
 	DownloadDir             string
+	PostDownloadHook        string
+	PostDownloadHookTimeout time.Duration
 	Basepath                string
 	Server                  string
 	EnableTLS               bool

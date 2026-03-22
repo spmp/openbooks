@@ -26,6 +26,8 @@ These options apply to both Server and CLI mode.
 | `--browser`/`-b`         | `false`     | Open the browser on startup.                              |
 | `--dir`/`-d`             | `/temp`[^1] | Directory where search results and eBooks are saved.      |
 | `--no-browser-downloads` | `false`     | Don't send files to browser but save them to disk.        |
+| `--post-download-hook`   |             | Executable path to run after a book download completes.   |
+| `--post-download-hook-timeout` | `20`  | Seconds to wait before terminating post-download-hook.    |
 | `--persist`              | `false`     | Save eBook files after sending to browser.                |
 | `--port`/`-p`            | `5228`      | The port that the server listens on.                      |
 | `--rate-limit`/`-r`      | `10`        | Seconds to wait between IRC search requests. (minimum 10) |
