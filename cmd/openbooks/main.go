@@ -55,6 +55,7 @@ func init() {
 	desktopCmd.Flags().StringVarP(&desktopConfig.DownloadDir, "dir", "d", downloadDir, "The directory where eBooks are saved.")
 	desktopCmd.Flags().StringVar(&desktopConfig.PostDownloadHook, "post-download-hook", "", "Executable path to run after a book download completes.")
 	desktopCmd.Flags().Int("post-download-hook-timeout", 20, "Seconds to wait before terminating post-download-hook.")
+	desktopCmd.Flags().Int("post-download-hook-workers", 1, "Maximum number of post-download-hook processes running at once.")
 }
 
 var desktopCmd = &cobra.Command{
@@ -65,10 +66,15 @@ var desktopCmd = &cobra.Command{
 		bindGlobalServerFlags(&desktopConfig)
 		rateLimit, _ := cmd.Flags().GetInt("rate-limit")
 		hookTimeout, _ := cmd.Flags().GetInt("post-download-hook-timeout")
+		hookWorkers, _ := cmd.Flags().GetInt("post-download-hook-workers")
 		if hookTimeout < 1 {
 			hookTimeout = 20
 		}
+		if hookWorkers < 1 {
+			hookWorkers = 1
+		}
 		desktopConfig.PostDownloadHookTimeout = time.Duration(hookTimeout) * time.Second
+		desktopConfig.PostDownloadHookWorkers = hookWorkers
 		ensureValidRate(rateLimit, &desktopConfig)
 		desktopConfig.DisableBrowserDownloads = true
 		desktopConfig.Basepath = "/"

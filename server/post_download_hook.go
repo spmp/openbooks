@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"time"
 )
+
+var runHookCommand = executeHookCommand
 
 func parseDownloadMetadata(identifier string) downloadMetadata {
 	identifier = strings.TrimSpace(identifier)
@@ -41,21 +44,17 @@ func (c *Client) runPostDownloadHook(scriptPath string, timeout time.Duration, f
 		timeout = 20 * time.Second
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
+	if c.hookWorkerLimiter != nil {
+		c.hookWorkerLimiter <- struct{}{}
+		defer func() {
+			<-c.hookWorkerLimiter
+		}()
+	}
 
-	command := exec.CommandContext(ctx, scriptPath, filePath)
-	command.Env = append(os.Environ(),
-		fmt.Sprintf("OPENBOOKS_FILE_PATH=%s", filePath),
-		fmt.Sprintf("OPENBOOKS_FILENAME=%s", filepath.Base(filePath)),
-		fmt.Sprintf("OPENBOOKS_AUTHOR=%s", metadata.Author),
-		fmt.Sprintf("OPENBOOKS_TITLE=%s", metadata.Title),
-	)
-
-	output, err := command.CombinedOutput()
+	output, timedOut, err := runHookCommand(scriptPath, timeout, filePath, metadata)
 	trimmedOutput := strings.TrimSpace(string(output))
 
-	if ctx.Err() == context.DeadlineExceeded {
+	if timedOut {
 		c.log.Printf("post-download-hook timed out after %s: %s", timeout, scriptPath)
 		c.logHookScriptDetails(scriptPath)
 		if trimmedOutput != "" {
@@ -76,6 +75,46 @@ func (c *Client) runPostDownloadHook(scriptPath string, timeout time.Duration, f
 
 	if trimmedOutput != "" {
 		c.log.Printf("post-download-hook output: %s", trimmedOutput)
+	}
+}
+
+func executeHookCommand(scriptPath string, timeout time.Duration, filePath string, metadata downloadMetadata) ([]byte, bool, error) {
+	cmd := exec.Command(scriptPath, filePath)
+	configureHookProcess(cmd)
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("OPENBOOKS_FILE_PATH=%s", filePath),
+		fmt.Sprintf("OPENBOOKS_FILENAME=%s", filepath.Base(filePath)),
+		fmt.Sprintf("OPENBOOKS_AUTHOR=%s", metadata.Author),
+		fmt.Sprintf("OPENBOOKS_TITLE=%s", metadata.Title),
+	)
+
+	stdout := bytes.NewBuffer(nil)
+	stderr := bytes.NewBuffer(nil)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+
+	if err := cmd.Start(); err != nil {
+		return append(stdout.Bytes(), stderr.Bytes()...), false, err
+	}
+
+	waitComplete := make(chan error, 1)
+	go func() {
+		waitComplete <- cmd.Wait()
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	select {
+	case err := <-waitComplete:
+		return append(stdout.Bytes(), stderr.Bytes()...), false, err
+	case <-timer.C:
+		killHookProcess(cmd)
+		waitErr := <-waitComplete
+		if waitErr != nil && !errors.Is(waitErr, context.DeadlineExceeded) {
+			return append(stdout.Bytes(), stderr.Bytes()...), true, waitErr
+		}
+		return append(stdout.Bytes(), stderr.Bytes()...), true, context.DeadlineExceeded
 	}
 }
 

@@ -50,6 +50,7 @@ type Config struct {
 	DownloadDir             string
 	PostDownloadHook        string
 	PostDownloadHookTimeout time.Duration
+	PostDownloadHookWorkers int
 	Basepath                string
 	Server                  string
 	EnableTLS               bool

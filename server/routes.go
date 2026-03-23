@@ -77,13 +77,19 @@ func (server *server) serveWs() http.HandlerFunc {
 			return
 		}
 
+		hookWorkers := server.config.PostDownloadHookWorkers
+		if hookWorkers < 1 {
+			hookWorkers = 1
+		}
+
 		client := &Client{
-			conn: conn,
-			send: make(chan interface{}, 128),
-			uuid: userId,
-			irc:  irc.New(server.config.UserName, server.config.UserAgent),
-			log:  log.New(os.Stdout, fmt.Sprintf("CLIENT (%s): ", server.config.UserName), log.LstdFlags|log.Lmsgprefix),
-			ctx:  context.Background(),
+			conn:              conn,
+			send:              make(chan interface{}, 128),
+			uuid:              userId,
+			irc:               irc.New(server.config.UserName, server.config.UserAgent),
+			log:               log.New(os.Stdout, fmt.Sprintf("CLIENT (%s): ", server.config.UserName), log.LstdFlags|log.Lmsgprefix),
+			ctx:               context.Background(),
+			hookWorkerLimiter: make(chan struct{}, hookWorkers),
 		}
 
 		server.log.Printf("Client connected from %s\n", conn.RemoteAddr().String())

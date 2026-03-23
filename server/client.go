@@ -55,6 +55,8 @@ type Client struct {
 
 	pendingDownloadsMutex sync.Mutex
 	pendingDownloads      []downloadMetadata
+
+	hookWorkerLimiter chan struct{}
 }
 
 type downloadMetadata struct {
