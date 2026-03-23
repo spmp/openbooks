@@ -56,6 +56,7 @@ func init() {
 	desktopCmd.Flags().StringVar(&desktopConfig.PostDownloadHook, "post-download-hook", "", "Executable path to run after a book download completes.")
 	desktopCmd.Flags().Int("post-download-hook-timeout", 20, "Seconds to wait before terminating post-download-hook.")
 	desktopCmd.Flags().Int("post-download-hook-workers", 1, "Maximum number of post-download-hook processes running at once.")
+	desktopCmd.Flags().Int("assign-random-username-after", 0, "Rotate to a random IRC username after N searches and downloads. Disabled when set to 0.")
 }
 
 var desktopCmd = &cobra.Command{
@@ -72,6 +73,9 @@ var desktopCmd = &cobra.Command{
 		}
 		if hookWorkers < 1 {
 			hookWorkers = 1
+		}
+		if desktopConfig.AssignRandomUsernameAfter < 0 {
+			desktopConfig.AssignRandomUsernameAfter = 0
 		}
 		desktopConfig.PostDownloadHookTimeout = time.Duration(hookTimeout) * time.Second
 		desktopConfig.PostDownloadHookWorkers = hookWorkers

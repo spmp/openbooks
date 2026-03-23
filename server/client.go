@@ -57,6 +57,9 @@ type Client struct {
 	pendingDownloads      []downloadMetadata
 
 	hookWorkerLimiter chan struct{}
+
+	requestCount    int
+	rotateOnRequest bool
 }
 
 type downloadMetadata struct {

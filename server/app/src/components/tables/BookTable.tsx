@@ -16,7 +16,10 @@ import {
   getFacetedRowModel,
   getFacetedUniqueValues,
   getFilteredRowModel,
+  getSortedRowModel,
   Row,
+  SortingFn,
+  SortingState,
   useReactTable
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -46,6 +49,36 @@ const stringInArray: FilterFn<any> = (
   return filterValue.includes(row.getValue<string>(columnId));
 };
 
+const parseSize = (value: string): number => {
+  const clean = (value ?? "").trim();
+  if (!clean || clean === "N/A") return -1;
+
+  const match = clean.match(/([0-9]+(?:\.[0-9]+)?)\s*([KMGT]?i?B|B)/i);
+  if (!match) return -1;
+
+  const number = Number(match[1]);
+  const unit = match[2].toUpperCase();
+  const multipliers: Record<string, number> = {
+    B: 1,
+    KB: 1000,
+    MB: 1000 ** 2,
+    GB: 1000 ** 3,
+    TB: 1000 ** 4,
+    KIB: 1024,
+    MIB: 1024 ** 2,
+    GIB: 1024 ** 3,
+    TIB: 1024 ** 4
+  };
+
+  return number * (multipliers[unit] ?? 1);
+};
+
+const sizeSort: SortingFn<BookDetail> = (rowA, rowB, columnId) => {
+  const left = parseSize(rowA.getValue<string>(columnId));
+  const right = parseSize(rowB.getValue<string>(columnId));
+  return left - right;
+};
+
 interface BookTableProps {
   books: BookDetail[];
 }
@@ -53,6 +86,7 @@ interface BookTableProps {
 export default function BookTable({ books }: BookTableProps) {
   const { classes, cx, theme } = useTableStyles();
   const { data: servers } = useGetServersQuery(null);
+  const [sorting, setSorting] = useState<SortingState>([]);
 
   const { ref: elementSizeRef, height, width } = useElementSize();
   const virtualizerRef = useRef();
@@ -95,7 +129,8 @@ export default function BookTable({ books }: BookTableProps) {
         },
         size: cols(1),
         enableColumnFilter: true,
-        filterFn: stringInArray
+        filterFn: stringInArray,
+        enableSorting: false
       }),
       columnHelper.accessor("author", {
         header: (props) => (
@@ -107,7 +142,8 @@ export default function BookTable({ books }: BookTableProps) {
           />
         ),
         size: cols(2),
-        enableColumnFilter: false
+        enableColumnFilter: false,
+        enableSorting: false
       }),
       columnHelper.accessor("title", {
         header: (props) => (
@@ -120,7 +156,8 @@ export default function BookTable({ books }: BookTableProps) {
         ),
         minSize: 20,
         size: cols(6),
-        enableColumnFilter: false
+        enableColumnFilter: false,
+        enableSorting: false
       }),
       columnHelper.accessor("format", {
         header: (props) => (
@@ -133,17 +170,30 @@ export default function BookTable({ books }: BookTableProps) {
         ),
         size: cols(1),
         enableColumnFilter: false,
-        filterFn: stringInArray
+        filterFn: stringInArray,
+        enableSorting: false
       }),
       columnHelper.accessor("size", {
-        header: "Size",
+        header: ({ column }) => {
+          const sortDirection = column.getIsSorted();
+          const suffix =
+            sortDirection === "asc"
+              ? " ▲"
+              : sortDirection === "desc"
+              ? " ▼"
+              : "";
+          return `Size${suffix}`;
+        },
         size: cols(1),
-        enableColumnFilter: false
+        enableColumnFilter: false,
+        sortingFn: sizeSort,
+        sortDescFirst: true
       }),
       columnHelper.display({
         header: "Download",
         size: cols(1),
         enableColumnFilter: false,
+        enableSorting: false,
         cell: ({ row }) => (
           <DownloadButton book={row.original}></DownloadButton>
         )
@@ -154,12 +204,15 @@ export default function BookTable({ books }: BookTableProps) {
   const table = useReactTable({
     data: books,
     columns: columns,
+    state: { sorting },
+    onSortingChange: setSorting,
     enableFilters: true,
     columnResizeMode: "onChange",
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues()
+    getFacetedUniqueValues: getFacetedUniqueValues(),
+    getSortedRowModel: getSortedRowModel()
   });
 
   const { rows: tableRows } = table.getRowModel();
@@ -198,12 +251,15 @@ export default function BookTable({ books }: BookTableProps) {
                   key={header.id}
                   className={classes.headerCell}
                   style={{
-                    width: header.getSize()
+                    width: header.getSize(),
+                    cursor: header.column.getCanSort() ? "pointer" : "default"
                   }}>
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext()
-                  )}
+                  <div onClick={header.column.getToggleSortingHandler()}>
+                    {flexRender(
+                      header.column.columnDef.header,
+                      header.getContext()
+                    )}
+                  </div>
                   <div
                     onMouseDown={header.getResizeHandler()}
                     onTouchStart={header.getResizeHandler()}

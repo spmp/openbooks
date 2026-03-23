@@ -85,7 +85,7 @@ func (c *Client) bookResultHandler(downloadDir string, disableBrowserDownloads b
 
 // NoResults is called when the server returns that nothing was found for the query
 func (c *Client) noResultsHandler(_ string) {
-	c.send <- newErrorResponse("No results found for the query.")
+	c.send <- newSearchResponse([]core.BookDetail{}, []core.ParseError{})
 }
 
 // BadServer is called when the requested download fails because the server is not available

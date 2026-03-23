@@ -28,6 +28,7 @@ func init() {
 	serverCmd.Flags().StringVar(&serverConfig.PostDownloadHook, "post-download-hook", "", "Executable path to run after a book download completes.")
 	serverCmd.Flags().Int("post-download-hook-timeout", 20, "Seconds to wait before terminating post-download-hook.")
 	serverCmd.Flags().Int("post-download-hook-workers", 1, "Maximum number of post-download-hook processes running at once.")
+	serverCmd.Flags().Int("assign-random-username-after", 0, "Rotate to a random IRC username after N searches and downloads. Disabled when set to 0.")
 }
 
 var serverCmd = &cobra.Command{
@@ -44,6 +45,9 @@ var serverCmd = &cobra.Command{
 		}
 		if hookWorkers < 1 {
 			hookWorkers = 1
+		}
+		if serverConfig.AssignRandomUsernameAfter < 0 {
+			serverConfig.AssignRandomUsernameAfter = 0
 		}
 		serverConfig.PostDownloadHookTimeout = time.Duration(hookTimeout) * time.Second
 		serverConfig.PostDownloadHookWorkers = hookWorkers

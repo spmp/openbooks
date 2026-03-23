@@ -43,21 +43,22 @@ type server struct {
 
 // Config contains settings for server
 type Config struct {
-	Log                     bool
-	Port                    string
-	UserName                string
-	Persist                 bool
-	DownloadDir             string
-	PostDownloadHook        string
-	PostDownloadHookTimeout time.Duration
-	PostDownloadHookWorkers int
-	Basepath                string
-	Server                  string
-	EnableTLS               bool
-	SearchTimeout           time.Duration
-	SearchBot               string
-	DisableBrowserDownloads bool
-	UserAgent               string
+	Log                       bool
+	Port                      string
+	UserName                  string
+	Persist                   bool
+	DownloadDir               string
+	PostDownloadHook          string
+	PostDownloadHookTimeout   time.Duration
+	PostDownloadHookWorkers   int
+	AssignRandomUsernameAfter int
+	Basepath                  string
+	Server                    string
+	EnableTLS                 bool
+	SearchTimeout             time.Duration
+	SearchBot                 string
+	DisableBrowserDownloads   bool
+	UserAgent                 string
 }
 
 func New(config Config) *server {

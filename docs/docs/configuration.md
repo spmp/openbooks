@@ -29,6 +29,7 @@ These options apply to both Server and CLI mode.
 | `--post-download-hook`   |             | Executable path to run after a book download completes.   |
 | `--post-download-hook-timeout` | `20`  | Seconds to wait before terminating post-download-hook.    |
 | `--post-download-hook-workers` | `1`   | Maximum number of post-download-hook processes at once.   |
+| `--assign-random-username-after` | `0` | Rotate IRC username after N searches + downloads (`0` disables). |
 | `--persist`              | `false`     | Save eBook files after sending to browser.                |
 | `--port`/`-p`            | `5228`      | The port that the server listens on.                      |
 | `--rate-limit`/`-r`      | `10`        | Seconds to wait between IRC search requests. (minimum 10) |
