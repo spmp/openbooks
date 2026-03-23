@@ -40,6 +40,11 @@ These options apply to both Server and CLI mode.
 - The hook is executed directly, so the configured value must be an executable path (it does not parse shell arguments).
 - Hook failures or timeouts are logged and do not interrupt download delivery.
 
+`--assign-random-username-after` notes:
+
+- This option is mutually exclusive with `--name`.
+- When enabled, OpenBooks generates a random initial username and rotates usernames every N search/download requests.
+
 ## CLI Mode Options
 
 | Flag         | Default           | Description                                          |

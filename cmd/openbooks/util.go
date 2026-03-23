@@ -1,7 +1,11 @@
 package main
 
 import (
+	"crypto/rand"
+	"errors"
+	"math/big"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/evan-buss/openbooks/server"
@@ -34,4 +38,39 @@ func sanitizePath(basepath string) string {
 		return cleaned
 	}
 	return cleaned + "/"
+}
+
+func applyUsernamePolicy(assignRandomAfter int, userName *string) error {
+	*userName = strings.TrimSpace(*userName)
+
+	if assignRandomAfter > 0 {
+		if *userName != "" {
+			return errors.New("--assign-random-username-after cannot be used with --name")
+		}
+
+		*userName = randomAlphaNumeric(12)
+		return nil
+	}
+
+	if *userName == "" {
+		return errors.New("required flag(s) \"name\" not set")
+	}
+
+	return nil
+}
+
+func randomAlphaNumeric(length int) string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, length)
+
+	for i := range b {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(alphabet))))
+		if err != nil {
+			b[i] = alphabet[i%len(alphabet)]
+			continue
+		}
+		b[i] = alphabet[n.Int64()]
+	}
+
+	return string(b)
 }

@@ -35,7 +35,14 @@ var serverCmd = &cobra.Command{
 	Use:   "server",
 	Short: "Run OpenBooks in server mode.",
 	Long:  "Run OpenBooks in server mode. This allows you to use a web interface to search and download eBooks.",
-	PreRun: func(cmd *cobra.Command, args []string) {
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		assignRandomAfter, _ := cmd.Flags().GetInt("assign-random-username-after")
+		serverConfig.AssignRandomUsernameAfter = assignRandomAfter
+
+		if err := applyUsernamePolicy(assignRandomAfter, &globalFlags.UserName); err != nil {
+			return err
+		}
+
 		bindGlobalServerFlags(&serverConfig)
 		rateLimit, _ := cmd.Flags().GetInt("rate-limit")
 		hookTimeout, _ := cmd.Flags().GetInt("post-download-hook-timeout")
@@ -60,6 +67,8 @@ var serverCmd = &cobra.Command{
 			}
 		}
 		serverConfig.Basepath = sanitizePath(serverConfig.Basepath)
+
+		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		if openBrowser {

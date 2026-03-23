@@ -29,7 +29,11 @@ func init() {
 var cliCmd = &cobra.Command{
 	Use:   "cli",
 	Short: "Run openbooks from the terminal in interactive CLI mode.",
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := applyUsernamePolicy(0, &globalFlags.UserName); err != nil {
+			return err
+		}
+
 		cliConfig.Version = globalFlags.UserAgent
 		cliConfig.UserName = globalFlags.UserName
 		cliConfig.Server = globalFlags.Server
@@ -40,6 +44,8 @@ var cliCmd = &cobra.Command{
 		if debug {
 			spew.Dump(cliConfig)
 		}
+
+		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		cli.StartInteractive(cliConfig)
