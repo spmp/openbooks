@@ -12,6 +12,11 @@ import (
 	"github.com/evan-buss/openbooks/util"
 )
 
+var joinIRC = core.Join
+var startIRCReader = core.StartReader
+
+const ircReadyTimeout = 5 * time.Second
+
 // RequestHandler defines a generic handle() method that is called when a specific request type is made
 type RequestHandler interface {
 	handle(c *Client)
@@ -52,15 +57,21 @@ func (server *server) routeMessage(message Request, c *Client) {
 
 // handle ConnectionRequests and either connect to the server or do nothing
 func (c *Client) startIrcConnection(server *server) {
+	c.resetIrcReady()
 	handler := c.newIrcEventHandler(server)
-	err := core.Join(c.irc, server.config.Server, server.config.EnableTLS)
+	err := joinIRC(c.irc, server.config.Server, server.config.EnableTLS)
 	if err != nil {
 		c.log.Println(err)
 		c.send <- newErrorResponse("Unable to connect to IRC server.")
 		return
 	}
 
-	go core.StartReader(c.ctx, c.irc, handler)
+	go startIRCReader(c.ctx, c.irc, handler)
+	c.irc.GetUsers("ebooks")
+
+	if !c.waitForIrcReady(ircReadyTimeout) {
+		c.log.Printf("Timed out waiting for IRC readiness for username %s", c.irc.Username)
+	}
 
 	c.send <- ConnectionResponse{
 		StatusResponse: StatusResponse{
@@ -106,18 +117,24 @@ func randomUsername(length int) string {
 
 func (c *Client) reconnectWithRandomUsername(server *server) error {
 	newConn := irc.New(randomUsername(12), server.config.UserAgent)
-	err := core.Join(newConn, server.config.Server, server.config.EnableTLS)
+	err := joinIRC(newConn, server.config.Server, server.config.EnableTLS)
 	if err != nil {
 		return err
 	}
 
 	oldConn := c.irc
 	c.irc = newConn
+	c.resetIrcReady()
 	if oldConn != nil {
 		oldConn.Disconnect()
 	}
 
-	go core.StartReader(c.ctx, c.irc, c.newIrcEventHandler(server))
+	go startIRCReader(c.ctx, c.irc, c.newIrcEventHandler(server))
+	c.irc.GetUsers("ebooks")
+
+	if !c.waitForIrcReady(ircReadyTimeout) {
+		c.log.Printf("Timed out waiting for IRC readiness after username rotation: %s", c.irc.Username)
+	}
 
 	c.send <- ConnectionResponse{
 		StatusResponse: StatusResponse{

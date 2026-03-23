@@ -60,6 +60,10 @@ type Client struct {
 
 	requestCount    int
 	rotateOnRequest bool
+
+	ircReadyMutex sync.Mutex
+	ircReady      chan struct{}
+	ircReadySet   bool
 }
 
 type downloadMetadata struct {
@@ -85,6 +89,47 @@ func (c *Client) nextDownloadMetadata() downloadMetadata {
 	metadata := c.pendingDownloads[0]
 	c.pendingDownloads = c.pendingDownloads[1:]
 	return metadata
+}
+
+func (c *Client) resetIrcReady() {
+	c.ircReadyMutex.Lock()
+	defer c.ircReadyMutex.Unlock()
+
+	c.ircReady = make(chan struct{})
+	c.ircReadySet = false
+}
+
+func (c *Client) markIrcReady() {
+	c.ircReadyMutex.Lock()
+	defer c.ircReadyMutex.Unlock()
+
+	if c.ircReadySet {
+		return
+	}
+
+	if c.ircReady == nil {
+		c.ircReady = make(chan struct{})
+	}
+
+	close(c.ircReady)
+	c.ircReadySet = true
+}
+
+func (c *Client) waitForIrcReady(timeout time.Duration) bool {
+	c.ircReadyMutex.Lock()
+	ready := c.ircReady
+	c.ircReadyMutex.Unlock()
+
+	if ready == nil {
+		return true
+	}
+
+	select {
+	case <-ready:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // readPump pumps messages from the websocket connection to the hub.

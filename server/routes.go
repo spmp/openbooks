@@ -90,6 +90,7 @@ func (server *server) serveWs() http.HandlerFunc {
 			log:               log.New(os.Stdout, fmt.Sprintf("CLIENT (%s): ", server.config.UserName), log.LstdFlags|log.Lmsgprefix),
 			ctx:               context.Background(),
 			hookWorkerLimiter: make(chan struct{}, hookWorkers),
+			ircReady:          make(chan struct{}),
 		}
 
 		server.log.Printf("Client connected from %s\n", conn.RemoteAddr().String())
