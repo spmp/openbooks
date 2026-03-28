@@ -152,7 +152,7 @@ func (server *server) getAllBooksHandler() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !server.config.Persist {
+		if !server.config.Persist && !server.config.DisableBrowserDownloads {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}

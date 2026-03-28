@@ -83,3 +83,12 @@ These options apply to both Server and CLI mode.
 | `--dir`/`-d` | Working Directory | Directory where search results and eBooks are saved. |
 
 [^1]: `/books` works with the default Docker image out of the box.
+
+## Server `/library` Endpoint
+
+- `GET /library` returns the current files in the server download directory (`--dir`).
+- This is a live filesystem view and can be used to inspect files that have not yet been processed by other tooling.
+- Availability:
+  - Enabled when `--persist` is true.
+  - Also enabled when `--no-browser-downloads` is true, even if `--persist` is false.
+- This endpoint reflects files currently on disk; it is not a browser-local history store.
