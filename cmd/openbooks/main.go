@@ -63,6 +63,13 @@ var desktopCmd = &cobra.Command{
 	Short: "Quickly and easily download eBooks from IRCHighway.",
 	Long:  "Runs OpenBooks in desktop mode. This allows you to run OpenBooks like a regular desktop application. This functionality utilizes your OS's native browser renderer and as such may not work on certain operating systems.",
 	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := applyGlobalEnvFlags(cmd); err != nil {
+			return err
+		}
+		if err := applyServerModeEnvFlags(cmd); err != nil {
+			return err
+		}
+
 		assignRandomAfter, _ := cmd.Flags().GetInt("assign-random-username-after")
 		desktopConfig.AssignRandomUsernameAfter = assignRandomAfter
 

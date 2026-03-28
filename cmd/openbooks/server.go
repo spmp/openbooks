@@ -1,9 +1,7 @@
 package main
 
 import (
-	"os"
 	"path"
-	"path/filepath"
 	"time"
 
 	"github.com/evan-buss/openbooks/server"
@@ -24,7 +22,7 @@ func init() {
 	serverCmd.Flags().StringVar(&serverConfig.Basepath, "basepath", "/", `Base path where the application is accessible. For example "/openbooks/".`)
 	serverCmd.Flags().BoolVarP(&openBrowser, "browser", "b", false, "Open the browser on server start.")
 	serverCmd.Flags().BoolVar(&serverConfig.Persist, "persist", false, "Persist eBooks in 'dir'. Default is to delete after sending.")
-	serverCmd.Flags().StringVarP(&serverConfig.DownloadDir, "dir", "d", filepath.Join(os.TempDir(), "openbooks"), "The directory where eBooks are saved when persist enabled.")
+	serverCmd.Flags().StringVarP(&serverConfig.DownloadDir, "dir", "d", "/books", "The directory where eBooks are saved when persist enabled.")
 	serverCmd.Flags().StringVar(&serverConfig.PostDownloadHook, "post-download-hook", "", "Executable path to run after a book download completes.")
 	serverCmd.Flags().Int("post-download-hook-timeout", 20, "Seconds to wait before terminating post-download-hook.")
 	serverCmd.Flags().Int("post-download-hook-workers", 1, "Maximum number of post-download-hook processes running at once.")
@@ -36,6 +34,13 @@ var serverCmd = &cobra.Command{
 	Short: "Run OpenBooks in server mode.",
 	Long:  "Run OpenBooks in server mode. This allows you to use a web interface to search and download eBooks.",
 	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := applyGlobalEnvFlags(cmd); err != nil {
+			return err
+		}
+		if err := applyServerModeEnvFlags(cmd); err != nil {
+			return err
+		}
+
 		assignRandomAfter, _ := cmd.Flags().GetInt("assign-random-username-after")
 		serverConfig.AssignRandomUsernameAfter = assignRandomAfter
 
@@ -59,13 +64,6 @@ var serverCmd = &cobra.Command{
 		serverConfig.PostDownloadHookTimeout = time.Duration(hookTimeout) * time.Second
 		serverConfig.PostDownloadHookWorkers = hookWorkers
 		ensureValidRate(rateLimit, &serverConfig)
-		// If cli flag isn't set (default value) check for the presence of an
-		// environment variable and use it if found.
-		if serverConfig.Basepath == cmd.Flag("basepath").DefValue {
-			if envPath, present := os.LookupEnv("BASE_PATH"); present {
-				serverConfig.Basepath = envPath
-			}
-		}
 		serverConfig.Basepath = sanitizePath(serverConfig.Basepath)
 
 		return nil

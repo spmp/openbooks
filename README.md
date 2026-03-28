@@ -25,9 +25,16 @@ Openbooks allows you to download ebooks from irc.irchighway.net quickly and easi
 ### Docker
 
 - Basic config
-  - `docker run -p 8080:80 evanbuss/openbooks`
+  - `docker run -p 8080:5228 evanbuss/openbooks`
 - Config to persist all eBook files to disk
-  - `docker run -p 8080:80 -v /home/evan/Downloads/openbooks:/books evanbuss/openbooks --persist`
+  - `docker run -p 8080:5228 -v /home/evan/Downloads/openbooks:/books evanbuss/openbooks --persist`
+
+Docker image defaults:
+
+- Server mode starts with `./openbooks server`.
+- Default port is `5228`.
+- Default download directory is `/books`.
+- Environment variables can override defaults without needing a `command:` override.
 
 ### Setting the Base Path
 
@@ -37,6 +44,61 @@ OpenBooks server doesn't have to be hosted at the root of your webserver. The ba
   - `docker run -p 8080:80 -e BASE_PATH=/openbooks/ evanbuss/openbooks`
 - Binary
   - `./openbooks server --basepath /openbooks/`
+
+## Environment Variables
+
+OpenBooks supports environment-variable configuration. CLI flags still take precedence.
+
+### Global
+
+- `OPENBOOKS_DEBUG`
+- `OPENBOOKS_NAME`
+- `OPENBOOKS_SERVER`
+- `OPENBOOKS_TLS`
+- `OPENBOOKS_LOG`
+- `OPENBOOKS_SEARCHBOT`
+- `OPENBOOKS_USERAGENT`
+
+### Server/Desktop
+
+- `OPENBOOKS_PORT`
+- `OPENBOOKS_RATE_LIMIT`
+- `OPENBOOKS_DIR`
+- `OPENBOOKS_POST_DOWNLOAD_HOOK`
+- `OPENBOOKS_POST_DOWNLOAD_HOOK_TIMEOUT`
+- `OPENBOOKS_POST_DOWNLOAD_HOOK_WORKERS`
+- `OPENBOOKS_ASSIGN_RANDOM_USERNAME_AFTER`
+- `OPENBOOKS_NO_BROWSER_DOWNLOADS`
+- `OPENBOOKS_PERSIST`
+- `OPENBOOKS_BROWSER`
+- `OPENBOOKS_BASEPATH` (legacy alias: `BASE_PATH`)
+
+### CLI
+
+- `OPENBOOKS_DIR`
+
+## Post-Download Hook
+
+Use `--post-download-hook` to run an executable after each completed server-side book download.
+
+- Hook receives file path as first argument.
+- Hook inherits container/process environment variables.
+- OpenBooks also sets: `OPENBOOKS_FILE_PATH`, `OPENBOOKS_FILENAME`, `OPENBOOKS_AUTHOR`, `OPENBOOKS_TITLE`.
+- Optional controls:
+  - `--post-download-hook-timeout` (default `20` seconds)
+  - `--post-download-hook-workers` (default `1`, queued execution)
+
+Example:
+
+- `./openbooks server --post-download-hook /opt/hooks/ebook.sh --post-download-hook-timeout 30 --post-download-hook-workers 2`
+
+## Random Username Rotation
+
+Use `--assign-random-username-after N` to rotate IRC usernames after every N searches+downloads.
+
+- Mutually exclusive with `--name`.
+- Generates a random initial username automatically when enabled.
+- Use a larger N value. Some IRC servers may dislike frequent nickname changes.
 
 ## Usage
 

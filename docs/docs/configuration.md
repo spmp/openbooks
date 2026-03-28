@@ -1,7 +1,37 @@
 # Configuration
 
-There are plans to allow configuration via environment variables and config files in a future release.
-For now, all config options are supplied via command line arguments / flags.
+All configuration options can be supplied by command line flags, and most can also be set via environment variables.
+When both are provided, command line flags take precedence over environment variables.
+
+## Environment Variables
+
+### Global
+
+- `OPENBOOKS_DEBUG`
+- `OPENBOOKS_NAME`
+- `OPENBOOKS_SERVER`
+- `OPENBOOKS_TLS`
+- `OPENBOOKS_LOG`
+- `OPENBOOKS_SEARCHBOT`
+- `OPENBOOKS_USERAGENT`
+
+### Server/Desktop mode
+
+- `OPENBOOKS_PORT`
+- `OPENBOOKS_RATE_LIMIT`
+- `OPENBOOKS_DIR`
+- `OPENBOOKS_POST_DOWNLOAD_HOOK`
+- `OPENBOOKS_POST_DOWNLOAD_HOOK_TIMEOUT`
+- `OPENBOOKS_POST_DOWNLOAD_HOOK_WORKERS`
+- `OPENBOOKS_ASSIGN_RANDOM_USERNAME_AFTER`
+- `OPENBOOKS_NO_BROWSER_DOWNLOADS`
+- `OPENBOOKS_PERSIST`
+- `OPENBOOKS_BROWSER`
+- `OPENBOOKS_BASEPATH` (legacy alias: `BASE_PATH`)
+
+### CLI mode
+
+- `OPENBOOKS_DIR`
 
 ## Global Options
 
@@ -24,7 +54,7 @@ These options apply to both Server and CLI mode.
 |--------------------------|-------------|-----------------------------------------------------------|
 | `--basepath`             | `/`         | Web UI Path. Must have trailing `/`. (Ex. `/openbooks/`)  |
 | `--browser`/`-b`         | `false`     | Open the browser on startup.                              |
-| `--dir`/`-d`             | `/temp`[^1] | Directory where search results and eBooks are saved.      |
+| `--dir`/`-d`             | `/books`[^1] | Directory where search results and eBooks are saved.      |
 | `--no-browser-downloads` | `false`     | Don't send files to browser but save them to disk.        |
 | `--post-download-hook`   |             | Executable path to run after a book download completes.   |
 | `--post-download-hook-timeout` | `20`  | Seconds to wait before terminating post-download-hook.    |
@@ -44,6 +74,7 @@ These options apply to both Server and CLI mode.
 
 - This option is mutually exclusive with `--name`.
 - When enabled, OpenBooks generates a random initial username and rotates usernames every N search/download requests.
+- Some IRC servers may treat frequent nickname changes as suspicious behavior. Use a larger N value for better stability.
 
 ## CLI Mode Options
 
@@ -51,4 +82,4 @@ These options apply to both Server and CLI mode.
 |--------------|-------------------|------------------------------------------------------|
 | `--dir`/`-d` | Working Directory | Directory where search results and eBooks are saved. |
 
-[^1]: Docker sets a static directory of `/books` so that the volume is accessible outside the container.
+[^1]: `/books` works with the default Docker image out of the box.
