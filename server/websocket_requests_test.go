@@ -71,3 +71,54 @@ func TestStartIrcConnectionWaitsForReadinessSignal(t *testing.T) {
 		t.Fatal("startIrcConnection did not complete")
 	}
 }
+
+func TestSendSearchRequestWaitsForIrcReadiness(t *testing.T) {
+	client := &Client{
+		irc:      irc.New("test-user", "test-agent"),
+		send:     make(chan interface{}, 2),
+		log:      log.New(io.Discard, "", 0),
+		ctx:      context.Background(),
+		ircReady: make(chan struct{}),
+	}
+
+	server := &server{
+		config: &Config{
+			SearchBot:     "search",
+			SearchTimeout: 0,
+		},
+		log: log.New(io.Discard, "", 0),
+	}
+
+	done := make(chan struct{})
+	go func() {
+		client.sendSearchRequest(&SearchRequest{Query: "gatsby"}, server)
+		close(done)
+	}()
+
+	select {
+	case <-client.send:
+		t.Fatal("search request completed before IRC readiness")
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	client.markIrcReady()
+
+	select {
+	case msg := <-client.send:
+		status, ok := msg.(StatusResponse)
+		if !ok {
+			t.Fatalf("expected StatusResponse, got %T", msg)
+		}
+		if status.Title != "Search request sent." {
+			t.Fatalf("unexpected status title %q", status.Title)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected search status after readiness signal")
+	}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sendSearchRequest did not complete")
+	}
+}

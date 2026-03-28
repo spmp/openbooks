@@ -16,6 +16,7 @@ var joinIRC = core.Join
 var startIRCReader = core.StartReader
 
 const ircReadyTimeout = 5 * time.Second
+const ircRequestReadyTimeout = 15 * time.Second
 
 // RequestHandler defines a generic handle() method that is called when a specific request type is made
 type RequestHandler interface {
@@ -67,9 +68,8 @@ func (c *Client) startIrcConnection(server *server) {
 	}
 
 	go startIRCReader(c.ctx, c.irc, handler)
-	c.irc.GetUsers("ebooks")
 
-	if !c.waitForIrcReady(ircReadyTimeout) {
+	if !c.waitForIrcReadyWithRetry(ircReadyTimeout) {
 		c.log.Printf("Timed out waiting for IRC readiness for username %s", c.irc.Username)
 	}
 
@@ -130,9 +130,8 @@ func (c *Client) reconnectWithRandomUsername(server *server) error {
 	}
 
 	go startIRCReader(c.ctx, c.irc, c.newIrcEventHandler(server))
-	c.irc.GetUsers("ebooks")
 
-	if !c.waitForIrcReady(ircReadyTimeout) {
+	if !c.waitForIrcReadyWithRetry(ircReadyTimeout) {
 		c.log.Printf("Timed out waiting for IRC readiness after username rotation: %s", c.irc.Username)
 	}
 
@@ -147,6 +146,45 @@ func (c *Client) reconnectWithRandomUsername(server *server) error {
 	}
 
 	return nil
+}
+
+func (c *Client) waitForIrcReadyWithRetry(timeout time.Duration) bool {
+	if c.waitForIrcReady(0) {
+		return true
+	}
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		c.irc.GetUsers("ebooks")
+
+		remaining := time.Until(deadline)
+		waitWindow := time.Second
+		if remaining < waitWindow {
+			waitWindow = remaining
+		}
+		if waitWindow <= 0 {
+			break
+		}
+
+		if c.waitForIrcReady(waitWindow) {
+			return true
+		}
+	}
+
+	return c.waitForIrcReady(0)
+}
+
+func (c *Client) ensureIrcReadyForRequest() bool {
+	if c.waitForIrcReady(0) {
+		return true
+	}
+
+	if c.waitForIrcReadyWithRetry(ircRequestReadyTimeout) {
+		return true
+	}
+
+	c.send <- newErrorResponse("Still waiting to join #ebooks. Try again in a moment.")
+	return false
 }
 
 func (c *Client) maybeRotateUsername(server *server, allowRotation bool) bool {
@@ -184,6 +222,10 @@ func (c *Client) markRequestForRotation(server *server) {
 
 // handle SearchRequests and send the query to the book server
 func (c *Client) sendSearchRequest(s *SearchRequest, server *server) {
+	if !c.ensureIrcReadyForRequest() {
+		return
+	}
+
 	if !c.maybeRotateUsername(server, true) {
 		return
 	}
@@ -209,6 +251,10 @@ func (c *Client) sendSearchRequest(s *SearchRequest, server *server) {
 
 // handle DownloadRequests by sending the request to the book server
 func (c *Client) sendDownloadRequest(d *DownloadRequest, server *server) {
+	if !c.ensureIrcReadyForRequest() {
+		return
+	}
+
 	if !c.maybeRotateUsername(server, false) {
 		return
 	}

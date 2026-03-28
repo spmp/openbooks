@@ -5,7 +5,7 @@ import {
   MiddlewareAPI,
   PayloadAction
 } from "@reduxjs/toolkit";
-import { openbooksApi } from "./api";
+import { addDownloadHistoryItem } from "./downloadHistorySlice";
 import { deleteHistoryItem } from "./historySlice";
 import {
   ConnectionResponse,
@@ -18,6 +18,7 @@ import {
 } from "./messages";
 import { addNotification } from "./notificationSlice";
 import {
+  removePendingDownloadLabel,
   removeInFlightDownload,
   sendMessage,
   setConnectionState,
@@ -37,7 +38,7 @@ export const websocketConn =
 
     socket.onopen = () => onOpen(dispatch);
     socket.onclose = () => onClose(dispatch);
-    socket.onmessage = (message) => route(dispatch, message);
+    socket.onmessage = (message) => route(dispatch, getState, message);
     socket.onerror = (event) =>
       displayNotification({
         appearance: NotificationType.DANGER,
@@ -74,7 +75,18 @@ const onClose = (dispatch: AppDispatch): void => {
   dispatch(setConnectionState(false));
 };
 
-const route = (dispatch: AppDispatch, msg: MessageEvent<any>): void => {
+const route = (
+  dispatch: AppDispatch,
+  getState: () => RootState,
+  msg: MessageEvent<any>
+): void => {
+  const fileNameFromPath = (input?: string): string => {
+    if (!input) return "";
+    const normalized = input.replace(/\\/g, "/");
+    const parts = normalized.split("/").filter((x) => x.length > 0);
+    return parts.length === 0 ? input : parts[parts.length - 1];
+  };
+
   const getNotif = (): Notification => {
     let response = JSON.parse(msg.data) as Response;
     const timestamp = new Date().getTime();
@@ -93,8 +105,33 @@ const route = (dispatch: AppDispatch, msg: MessageEvent<any>): void => {
         dispatch(setSearchResults(response as SearchResponse));
         return notification;
       case MessageType.DOWNLOAD:
-        downloadFile((response as DownloadResponse)?.downloadPath);
-        dispatch(openbooksApi.util.invalidateTags(["books"]));
+        const download = response as DownloadResponse;
+        const state = getState();
+        const pendingLabel = state.state.pendingDownloadLabels[0];
+        const fileName = fileNameFromPath(
+          download.downloadPath || download.detail
+        );
+
+        let displayName = fileName || download.detail || "Downloaded file";
+        if (pendingLabel && (pendingLabel.title || pendingLabel.author)) {
+          const parts = [pendingLabel.title, pendingLabel.author].filter(
+            (x) => x && x.trim() !== ""
+          );
+          if (fileName) {
+            parts.push(fileName);
+          }
+          displayName = parts.join(" - ");
+        }
+
+        dispatch(
+          addDownloadHistoryItem({
+            name: displayName,
+            downloadPath: download.downloadPath,
+            timestamp
+          })
+        );
+        downloadFile(download.downloadPath);
+        dispatch(removePendingDownloadLabel());
         dispatch(removeInFlightDownload());
         return notification;
       case MessageType.RATELIMIT:

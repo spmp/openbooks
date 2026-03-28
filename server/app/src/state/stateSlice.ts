@@ -14,6 +14,7 @@ interface AppState {
   activeItem: HistoryItem | null;
   username?: string;
   inFlightDownloads: string[];
+  pendingDownloadLabels: { author: string; title: string }[];
 }
 
 const loadActive = (): HistoryItem | null => {
@@ -29,7 +30,8 @@ const initialState: AppState = {
   isSidebarOpen: true,
   activeItem: loadActive(),
   username: undefined,
-  inFlightDownloads: []
+  inFlightDownloads: [],
+  pendingDownloadLabels: []
 };
 
 const stateSlice = createSlice({
@@ -47,6 +49,15 @@ const stateSlice = createSlice({
     },
     addInFlightDownload(state, action: PayloadAction<string>) {
       state.inFlightDownloads.push(action.payload);
+    },
+    addPendingDownloadLabel(
+      state,
+      action: PayloadAction<{ author: string; title: string }>
+    ) {
+      state.pendingDownloadLabels.push(action.payload);
+    },
+    removePendingDownloadLabel(state) {
+      state.pendingDownloadLabels.shift();
     },
     removeInFlightDownload(state) {
       state.inFlightDownloads.shift();
@@ -66,6 +77,7 @@ const sendDownload = createAsyncThunk(
   "state/send_download",
   (book: BookDetail, { dispatch }) => {
     dispatch(addInFlightDownload(book.full));
+    dispatch(addPendingDownloadLabel({ author: book.author, title: book.title }));
     dispatch(
       sendMessage({
         type: MessageType.DOWNLOAD,
@@ -125,6 +137,8 @@ export const {
   setConnectionState,
   setUsername,
   addInFlightDownload,
+  addPendingDownloadLabel,
+  removePendingDownloadLabel,
   removeInFlightDownload,
   toggleSidebar
 } = stateSlice.actions;

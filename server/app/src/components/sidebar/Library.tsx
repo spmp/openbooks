@@ -2,7 +2,6 @@ import {
   Badge,
   Button,
   Center,
-  Loader,
   Menu,
   Stack,
   Text,
@@ -10,33 +9,20 @@ import {
 } from "@mantine/core";
 import { AnimatePresence, motion } from "framer-motion";
 import { Book as BookIcon, Download, Trash } from "phosphor-react";
-import { Book, useDeleteBookMutation, useGetBooksQuery } from "../../state/api";
+import {
+  deleteDownloadHistoryItem,
+  DownloadHistoryItem,
+  selectDownloadHistory
+} from "../../state/downloadHistorySlice";
+import { useAppDispatch, useAppSelector } from "../../state/store";
 import { downloadFile } from "../../state/util";
 import { defaultAnimation } from "../../utils/animation";
 import { useSidebarButtonStyle } from "./styles";
 
 export default function Library() {
-  const { data, isLoading, isSuccess, isError } = useGetBooksQuery(null);
+  const data = useAppSelector(selectDownloadHistory);
 
-  if (isLoading) {
-    return (
-      <Center>
-        <Loader />
-      </Center>
-    );
-  }
-
-  if (isError) {
-    return (
-      <Center>
-        <Text color="dimmed" size="sm">
-          Book persistence disabled.
-        </Text>
-      </Center>
-    );
-  }
-
-  if (isSuccess && data?.length === 0) {
+  if (data.length === 0) {
     return (
       <Center>
         <Text color="dimmed" size="sm">
@@ -50,8 +36,8 @@ export default function Library() {
     <Stack spacing="xs">
       <AnimatePresence mode="popLayout">
         {data?.map((book) => (
-          <motion.div {...defaultAnimation} key={book.name}>
-            <LibraryCard key={book.name} book={book} />
+          <motion.div {...defaultAnimation} key={book.timestamp.toString()}>
+            <LibraryCard key={book.timestamp.toString()} book={book} />
           </motion.div>
         ))}
       </AnimatePresence>
@@ -60,12 +46,12 @@ export default function Library() {
 }
 
 interface LibraryCardProps {
-  book: Book;
+  book: DownloadHistoryItem;
 }
 
 function LibraryCard({ book }: LibraryCardProps) {
   const { classes } = useSidebarButtonStyle({});
-  const [deleteBook] = useDeleteBookMutation();
+  const dispatch = useAppDispatch();
 
   return (
     <Menu shadow="md">
@@ -80,7 +66,7 @@ function LibraryCard({ book }: LibraryCardProps) {
             leftIcon={<BookIcon weight="bold" size={18} />}
             rightIcon={
               <Badge color="brand" radius="sm" size="sm" variant="light">
-                {new Date(book.time).toLocaleDateString("en-US")}
+                {new Date(book.timestamp).toLocaleDateString("en-US")}
               </Badge>
             }>
             {book.name}
@@ -91,15 +77,16 @@ function LibraryCard({ book }: LibraryCardProps) {
       <Menu.Dropdown>
         <Menu.Item
           icon={<Download weight="bold" />}
-          onClick={() => downloadFile(book.downloadLink)}>
+          disabled={!book.downloadPath}
+          onClick={() => downloadFile(book.downloadPath)}>
           Download
         </Menu.Item>
 
         <Menu.Item
           color="red"
           icon={<Trash size={18} weight="bold" />}
-          onClick={() => deleteBook(book.name)}>
-          Delete
+          onClick={() => dispatch(deleteDownloadHistoryItem(book.timestamp))}>
+          Remove from history
         </Menu.Item>
       </Menu.Dropdown>
     </Menu>

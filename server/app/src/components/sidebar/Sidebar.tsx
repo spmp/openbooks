@@ -110,7 +110,7 @@ export default function Sidebar() {
           onChange={(value: "books" | "history") => setIndex(value)}
           data={[
             { label: "Search History", value: "history" },
-            { label: "Previous Downloads", value: "books" }
+            { label: "Download History", value: "books" }
           ]}
           fullWidth
         />

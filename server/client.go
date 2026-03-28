@@ -124,6 +124,15 @@ func (c *Client) waitForIrcReady(timeout time.Duration) bool {
 		return true
 	}
 
+	if timeout <= 0 {
+		select {
+		case <-ready:
+			return true
+		default:
+			return false
+		}
+	}
+
 	select {
 	case <-ready:
 		return true
