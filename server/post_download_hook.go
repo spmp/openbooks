@@ -44,6 +44,8 @@ func (c *Client) runPostDownloadHook(scriptPath string, timeout time.Duration, f
 		timeout = 20 * time.Second
 	}
 
+	c.log.Printf("post-download-hook triggered: command=%q arg=%q", scriptPath, filePath)
+
 	if c.hookWorkerLimiter != nil {
 		c.hookWorkerLimiter <- struct{}{}
 		defer func() {
