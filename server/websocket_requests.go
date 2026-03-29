@@ -15,8 +15,8 @@ import (
 var joinIRC = core.Join
 var startIRCReader = core.StartReader
 
-const ircReadyTimeout = 5 * time.Second
-const ircRequestReadyTimeout = 15 * time.Second
+var ircReadyTimeout = 5 * time.Second
+var ircRequestReadyTimeout = 15 * time.Second
 
 // RequestHandler defines a generic handle() method that is called when a specific request type is made
 type RequestHandler interface {
@@ -60,17 +60,27 @@ func (server *server) routeMessage(message Request, c *Client) {
 func (c *Client) startIrcConnection(server *server) {
 	c.resetIrcReady()
 	handler := c.newIrcEventHandler(server)
+	if c.debug {
+		c.log.Printf("Debug: connecting to IRC server=%s tls=%t username=%s", server.config.Server, server.config.EnableTLS, c.irc.Username)
+	}
 	err := joinIRC(c.irc, server.config.Server, server.config.EnableTLS)
 	if err != nil {
-		c.log.Println(err)
+		c.log.Printf("Error connecting to IRC server=%s username=%s: %v", server.config.Server, c.irc.Username, err)
 		c.send <- newErrorResponse("Unable to connect to IRC server.")
 		return
+	}
+	if c.debug {
+		c.log.Printf("Debug: IRC connect/join command sequence completed for username=%s", c.irc.Username)
 	}
 
 	go startIRCReader(c.ctx, c.irc, handler)
 
 	if !c.waitForIrcReadyWithRetry(ircReadyTimeout) {
 		c.log.Printf("Timed out waiting for IRC readiness for username %s", c.irc.Username)
+		c.log.Printf("Closing IRC connection after readiness timeout for username %s", c.irc.Username)
+		c.send <- newErrorResponse("Unable to join #ebooks. Try reconnecting.")
+		c.irc.Disconnect()
+		return
 	}
 
 	c.send <- ConnectionResponse{
@@ -133,6 +143,14 @@ func (c *Client) reconnectWithRandomUsername(server *server) error {
 
 	if !c.waitForIrcReadyWithRetry(ircReadyTimeout) {
 		c.log.Printf("Timed out waiting for IRC readiness after username rotation: %s", c.irc.Username)
+		c.log.Printf("Closing rotated IRC connection and restoring previous username after timeout")
+		c.send <- newErrorResponse("Unable to join #ebooks after username rotation. Reusing previous username.")
+		c.irc.Disconnect()
+		c.irc = oldConn
+		if c.irc != nil {
+			go startIRCReader(c.ctx, c.irc, c.newIrcEventHandler(server))
+		}
+		return nil
 	}
 
 	c.send <- ConnectionResponse{
@@ -155,6 +173,9 @@ func (c *Client) waitForIrcReadyWithRetry(timeout time.Duration) bool {
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
+		if c.debug {
+			c.log.Printf("Debug: requesting channel user list for readiness check (username=%s)", c.irc.Username)
+		}
 		c.irc.GetUsers("ebooks")
 
 		remaining := time.Until(deadline)
@@ -179,6 +200,10 @@ func (c *Client) ensureIrcReadyForRequest() bool {
 		return true
 	}
 
+	if c.debug {
+		c.log.Printf("Debug: waiting for IRC readiness before processing request (username=%s)", c.irc.Username)
+	}
+
 	if c.waitForIrcReadyWithRetry(ircRequestReadyTimeout) {
 		return true
 	}
@@ -188,10 +213,6 @@ func (c *Client) ensureIrcReadyForRequest() bool {
 }
 
 func (c *Client) maybeRotateUsername(server *server, allowRotation bool) bool {
-	if !c.rotateOnRequest {
-		return true
-	}
-
 	if !allowRotation {
 		return true
 	}
@@ -200,24 +221,10 @@ func (c *Client) maybeRotateUsername(server *server, allowRotation bool) bool {
 	if err != nil {
 		c.log.Println(err)
 		c.send <- newErrorResponse("Unable to rotate IRC username. Reusing current connection.")
-		c.rotateOnRequest = false
 		return true
 	}
 
-	c.rotateOnRequest = false
 	return true
-}
-
-func (c *Client) markRequestForRotation(server *server) {
-	n := server.config.AssignRandomUsernameAfter
-	if n <= 0 {
-		return
-	}
-
-	c.requestCount++
-	if c.requestCount%n == 0 {
-		c.rotateOnRequest = true
-	}
 }
 
 // handle SearchRequests and send the query to the book server
@@ -226,7 +233,7 @@ func (c *Client) sendSearchRequest(s *SearchRequest, server *server) {
 		return
 	}
 
-	if !c.maybeRotateUsername(server, true) {
+	if !c.maybeRotateUsername(server, server.consumeRotateOnNextSearch()) {
 		return
 	}
 
@@ -243,7 +250,7 @@ func (c *Client) sendSearchRequest(s *SearchRequest, server *server) {
 	}
 
 	core.SearchBook(c.irc, server.config.SearchBot, s.Query)
-	c.markRequestForRotation(server)
+	server.markRequestForRotation()
 	server.lastSearch = time.Now()
 
 	c.send <- newStatusResponse(NOTIFY, "Search request sent.")
@@ -265,6 +272,6 @@ func (c *Client) sendDownloadRequest(d *DownloadRequest, server *server) {
 		c.queueDownloadMetadata(parseDownloadMetadata(d.Book))
 	}
 	core.DownloadBook(c.irc, d.Book)
-	c.markRequestForRotation(server)
+	server.markRequestForRotation()
 	c.send <- newStatusResponse(NOTIFY, "Download request received.")
 }

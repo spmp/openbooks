@@ -88,6 +88,7 @@ func (server *server) serveWs() http.HandlerFunc {
 			uuid:              userId,
 			irc:               irc.New(server.config.UserName, server.config.UserAgent),
 			log:               log.New(os.Stdout, fmt.Sprintf("CLIENT (%s): ", server.config.UserName), log.LstdFlags|log.Lmsgprefix),
+			debug:             server.config.Debug,
 			ctx:               context.Background(),
 			hookWorkerLimiter: make(chan struct{}, hookWorkers),
 			ircReady:          make(chan struct{}),

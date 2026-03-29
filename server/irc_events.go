@@ -118,6 +118,9 @@ func (c *Client) versionHandler(version string) core.HandlerFunc {
 func (c *Client) userListHandler(repo *Repository) core.HandlerFunc {
 	return func(text string) {
 		repo.servers = core.ParseServers(text)
+		if c.debug {
+			c.log.Printf("Debug: received user list and marked IRC ready (servers=%d)", len(repo.servers.ElevatedUsers))
+		}
 		c.markIrcReady()
 	}
 }

@@ -16,6 +16,7 @@ import (
 
 // Update a server config struct from globalFlags
 func bindGlobalServerFlags(config *server.Config) {
+	config.Debug = debug
 	config.UserAgent = globalFlags.UserAgent
 	config.UserName = globalFlags.UserName
 	config.Log = globalFlags.Log
@@ -81,6 +82,7 @@ func randomAlphaNumeric(length int) string {
 func applyGlobalEnvFlags(cmd *cobra.Command) error {
 	bindings := []flagEnvBinding{
 		{Flag: "debug", Env: "OPENBOOKS_DEBUG"},
+		{Flag: "debug", Env: "DEBUG"},
 		{Flag: "name", Env: "OPENBOOKS_NAME"},
 		{Flag: "server", Env: "OPENBOOKS_SERVER"},
 		{Flag: "tls", Env: "OPENBOOKS_TLS"},

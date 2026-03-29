@@ -66,7 +66,7 @@ export const websocketConn =
 
 const onOpen = (dispatch: AppDispatch): void => {
   console.log("WebSocket connected.");
-  dispatch(setConnectionState(true));
+  dispatch(setConnectionState(false));
   dispatch(sendMessage({ type: MessageType.CONNECT, payload: {} }));
 };
 
@@ -97,8 +97,16 @@ const route = (
 
     switch (response.type) {
       case MessageType.STATUS:
+        if (
+          response.appearance === NotificationType.DANGER &&
+          response.title.toLowerCase().includes("unable to join #ebooks")
+        ) {
+          dispatch(setConnectionState(false));
+          dispatch(setUsername(""));
+        }
         return notification;
       case MessageType.CONNECT:
+        dispatch(setConnectionState(true));
         dispatch(setUsername((response as ConnectionResponse).name));
         return notification;
       case MessageType.SEARCH:
@@ -114,13 +122,23 @@ const route = (
 
         let displayName = fileName || download.detail || "Downloaded file";
         if (pendingLabel && (pendingLabel.title || pendingLabel.author)) {
-          const parts = [pendingLabel.title, pendingLabel.author].filter(
-            (x) => x && x.trim() !== ""
-          );
+          const title = (pendingLabel.title || "").trim();
+          const authors = (pendingLabel.author || "").trim();
+
+          const parts = [] as string[];
+          if (title) {
+            parts.push(title);
+          }
+          if (authors) {
+            parts.push(authors);
+          }
           if (fileName) {
             parts.push(fileName);
           }
-          displayName = parts.join(" - ");
+
+          if (parts.length > 0) {
+            displayName = parts.join(" - ");
+          }
         }
 
         dispatch(

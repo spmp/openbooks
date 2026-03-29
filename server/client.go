@@ -50,6 +50,8 @@ type Client struct {
 
 	log *log.Logger
 
+	debug bool
+
 	// Context is used to signal when this client should close.
 	ctx context.Context
 
@@ -57,9 +59,6 @@ type Client struct {
 	pendingDownloads      []downloadMetadata
 
 	hookWorkerLimiter chan struct{}
-
-	requestCount    int
-	rotateOnRequest bool
 
 	ircReadyMutex sync.Mutex
 	ircReady      chan struct{}

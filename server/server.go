@@ -39,10 +39,15 @@ type server struct {
 
 	// The time the last search was performed. Used to rate limit searches.
 	lastSearch time.Time
+
+	requestRotationMutex sync.Mutex
+	requestCount         int
+	rotateOnNextSearch   bool
 }
 
 // Config contains settings for server
 type Config struct {
+	Debug                     bool
 	Log                       bool
 	Port                      string
 	UserName                  string
@@ -146,5 +151,32 @@ func createBooksDirectory(config Config) {
 	err := os.MkdirAll(config.DownloadDir, os.FileMode(0755))
 	if err != nil {
 		panic(err)
+	}
+}
+
+func (server *server) consumeRotateOnNextSearch() bool {
+	server.requestRotationMutex.Lock()
+	defer server.requestRotationMutex.Unlock()
+
+	if !server.rotateOnNextSearch {
+		return false
+	}
+
+	server.rotateOnNextSearch = false
+	return true
+}
+
+func (server *server) markRequestForRotation() {
+	n := server.config.AssignRandomUsernameAfter
+	if n <= 0 {
+		return
+	}
+
+	server.requestRotationMutex.Lock()
+	defer server.requestRotationMutex.Unlock()
+
+	server.requestCount++
+	if server.requestCount%n == 0 {
+		server.rotateOnNextSearch = true
 	}
 }
