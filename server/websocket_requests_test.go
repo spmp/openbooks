@@ -38,6 +38,7 @@ func TestStartIrcConnectionWaitsForReadinessSignal(t *testing.T) {
 	server := &server{
 		repository: NewRepository(),
 		config: &Config{
+			UserName:  "test-user",
 			Server:    "example:6667",
 			EnableTLS: false,
 			UserAgent: "test-agent",
@@ -57,7 +58,7 @@ func TestStartIrcConnectionWaitsForReadinessSignal(t *testing.T) {
 	case <-time.After(150 * time.Millisecond):
 	}
 
-	client.markIrcReady()
+	server.markIrcReady()
 
 	select {
 	case msg := <-client.send:
@@ -86,10 +87,13 @@ func TestSendSearchRequestWaitsForIrcReadiness(t *testing.T) {
 
 	server := &server{
 		config: &Config{
+			UserName:      "test-user",
 			SearchBot:     "search",
 			SearchTimeout: 0,
 		},
-		log: log.New(io.Discard, "", 0),
+		log:      log.New(io.Discard, "", 0),
+		ircConn:  irc.New("test-user", "test-agent"),
+		ircReady: make(chan struct{}),
 	}
 
 	done := make(chan struct{})
@@ -104,7 +108,7 @@ func TestSendSearchRequestWaitsForIrcReadiness(t *testing.T) {
 	case <-time.After(150 * time.Millisecond):
 	}
 
-	client.markIrcReady()
+	server.markIrcReady()
 
 	select {
 	case msg := <-client.send:
@@ -153,6 +157,7 @@ func TestStartIrcConnectionDoesNotSendSuccessOnReadinessTimeout(t *testing.T) {
 	server := &server{
 		repository: NewRepository(),
 		config: &Config{
+			UserName:  "test-user",
 			Server:    "example:6667",
 			EnableTLS: false,
 			UserAgent: "test-agent",
@@ -203,6 +208,7 @@ func TestStartIrcConnectionJoinFailureLogsAndReturnsError(t *testing.T) {
 	server := &server{
 		repository: NewRepository(),
 		config: &Config{
+			UserName:  "test-user",
 			Server:    "example:6667",
 			EnableTLS: false,
 			UserAgent: "test-agent",
@@ -226,7 +232,7 @@ func TestStartIrcConnectionJoinFailureLogsAndReturnsError(t *testing.T) {
 	}
 
 	logs := logBuffer.String()
-	if !strings.Contains(logs, "Error connecting to IRC server=example:6667 username=test-user") {
+	if !strings.Contains(logs, "Error connecting to IRC server=example:6667") {
 		t.Fatalf("expected connection failure details in log, got %q", logs)
 	}
 }

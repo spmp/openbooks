@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/evan-buss/openbooks/irc"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
@@ -43,6 +44,19 @@ type server struct {
 	requestRotationMutex sync.Mutex
 	requestCount         int
 	rotateOnNextSearch   bool
+
+	ircMutex          sync.Mutex
+	ircConn           *irc.Conn
+	ircReady          chan struct{}
+	ircReadySet       bool
+	ircConnecting     bool
+	currentSearchUser uuid.UUID
+	pendingDownloads  []pendingDownload
+}
+
+type pendingDownload struct {
+	UserID   uuid.UUID
+	Metadata downloadMetadata
 }
 
 // Config contains settings for server
@@ -74,6 +88,7 @@ func New(config Config) *server {
 		unregister: make(chan *Client),
 		clients:    make(map[uuid.UUID]*Client),
 		log:        log.New(os.Stdout, "SERVER: ", log.LstdFlags|log.Lmsgprefix),
+		ircReady:   make(chan struct{}),
 	}
 }
 
@@ -121,6 +136,20 @@ func (server *server) startClientHub(ctx context.Context) {
 				close(client.send)
 				cancel()
 				delete(server.clients, client.uuid)
+
+				if len(server.clients) == 0 {
+					server.ircMutex.Lock()
+					if server.ircConn != nil {
+						server.log.Println("No connected web clients; disconnecting shared IRC connection.")
+						server.ircConn.Disconnect()
+						server.ircConn = nil
+					}
+					server.currentSearchUser = uuid.Nil
+					server.pendingDownloads = nil
+					server.ircReady = make(chan struct{})
+					server.ircReadySet = false
+					server.ircMutex.Unlock()
+				}
 			}
 		case <-ctx.Done():
 			for _, client := range server.clients {

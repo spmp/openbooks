@@ -1,15 +1,16 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/evan-buss/openbooks/core"
 	"github.com/evan-buss/openbooks/irc"
-	"github.com/evan-buss/openbooks/util"
 )
 
 var joinIRC = core.Join
@@ -58,55 +59,29 @@ func (server *server) routeMessage(message Request, c *Client) {
 
 // handle ConnectionRequests and either connect to the server or do nothing
 func (c *Client) startIrcConnection(server *server) {
-	c.resetIrcReady()
-	handler := c.newIrcEventHandler(server)
-	if c.debug {
-		c.log.Printf("Debug: connecting to IRC server=%s tls=%t username=%s", server.config.Server, server.config.EnableTLS, c.irc.Username)
-	}
-	err := joinIRC(c.irc, server.config.Server, server.config.EnableTLS)
+	err := server.ensureSharedConnection(c)
 	if err != nil {
-		c.log.Printf("Error connecting to IRC server=%s username=%s: %v", server.config.Server, c.irc.Username, err)
+		c.log.Printf("Error connecting shared IRC session: %v", err)
+		c.send <- newErrorResponse(err.Error())
+		return
+	}
+
+	ircConn := server.sharedIrcConn()
+	if ircConn == nil {
 		c.send <- newErrorResponse("Unable to connect to IRC server.")
 		return
 	}
-	if c.debug {
-		c.log.Printf("Debug: IRC connect/join command sequence completed for username=%s", c.irc.Username)
-	}
-
-	go startIRCReader(c.ctx, c.irc, handler)
-
-	if !c.waitForIrcReadyWithRetry(ircReadyTimeout) {
-		c.log.Printf("Timed out waiting for IRC readiness for username %s", c.irc.Username)
-		c.log.Printf("Closing IRC connection after readiness timeout for username %s", c.irc.Username)
-		c.send <- newErrorResponse("Unable to join #ebooks. Try reconnecting.")
-		c.irc.Disconnect()
-		return
-	}
+	c.irc = ircConn
 
 	c.send <- ConnectionResponse{
 		StatusResponse: StatusResponse{
 			MessageType:      CONNECT,
 			NotificationType: SUCCESS,
 			Title:            "Welcome, connection established.",
-			Detail:           fmt.Sprintf("IRC username %s", c.irc.Username),
+			Detail:           fmt.Sprintf("IRC username %s", ircConn.Username),
 		},
-		Name: c.irc.Username,
+		Name: ircConn.Username,
 	}
-}
-
-func (c *Client) newIrcEventHandler(server *server) core.EventHandler {
-	handler := server.NewIrcEventHandler(c)
-
-	if server.config.Log {
-		logger, _, err := util.CreateLogFile(c.irc.Username, server.config.DownloadDir)
-		if err != nil {
-			server.log.Println(err)
-		} else {
-			handler[core.Message] = func(text string) { logger.Println(text) }
-		}
-	}
-
-	return handler
 }
 
 func randomUsername(length int) string {
@@ -126,32 +101,36 @@ func randomUsername(length int) string {
 }
 
 func (c *Client) reconnectWithRandomUsername(server *server) error {
+	if server.config.AssignRandomUsernameAfter <= 0 {
+		return nil
+	}
+
 	newConn := irc.New(randomUsername(12), server.config.UserAgent)
+	if c.debug {
+		c.log.Printf("Debug: rotating IRC username to %s", newConn.Username)
+	}
 	err := joinIRC(newConn, server.config.Server, server.config.EnableTLS)
 	if err != nil {
 		return err
 	}
 
-	oldConn := c.irc
-	c.irc = newConn
-	c.resetIrcReady()
+	server.resetIrcReady()
+	go startIRCReader(c.ctx, newConn, server.NewIrcEventHandler())
+
+	if !server.waitForIrcReadyWithRetry(c, ircReadyTimeout) {
+		newConn.Disconnect()
+		return errors.New("unable to join #ebooks after username rotation")
+	}
+
+	server.ircMutex.Lock()
+	oldConn := server.ircConn
+	server.ircConn = newConn
+	server.ircMutex.Unlock()
+
 	if oldConn != nil {
 		oldConn.Disconnect()
 	}
-
-	go startIRCReader(c.ctx, c.irc, c.newIrcEventHandler(server))
-
-	if !c.waitForIrcReadyWithRetry(ircReadyTimeout) {
-		c.log.Printf("Timed out waiting for IRC readiness after username rotation: %s", c.irc.Username)
-		c.log.Printf("Closing rotated IRC connection and restoring previous username after timeout")
-		c.send <- newErrorResponse("Unable to join #ebooks after username rotation. Reusing previous username.")
-		c.irc.Disconnect()
-		c.irc = oldConn
-		if c.irc != nil {
-			go startIRCReader(c.ctx, c.irc, c.newIrcEventHandler(server))
-		}
-		return nil
-	}
+	c.irc = newConn
 
 	c.send <- ConnectionResponse{
 		StatusResponse: StatusResponse{
@@ -166,17 +145,21 @@ func (c *Client) reconnectWithRandomUsername(server *server) error {
 	return nil
 }
 
-func (c *Client) waitForIrcReadyWithRetry(timeout time.Duration) bool {
-	if c.waitForIrcReady(0) {
+func (server *server) waitForIrcReadyWithRetry(client *Client, timeout time.Duration) bool {
+	if server.waitForIrcReady(0) {
 		return true
 	}
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if c.debug {
-			c.log.Printf("Debug: requesting channel user list for readiness check (username=%s)", c.irc.Username)
+		ircConn := server.sharedIrcConn()
+		if ircConn == nil {
+			return false
 		}
-		c.irc.GetUsers("ebooks")
+		if client != nil && client.debug {
+			client.log.Printf("Debug: requesting channel user list for readiness check (username=%s)", ircConn.Username)
+		}
+		ircConn.GetUsers("ebooks")
 
 		remaining := time.Until(deadline)
 		waitWindow := time.Second
@@ -187,16 +170,16 @@ func (c *Client) waitForIrcReadyWithRetry(timeout time.Duration) bool {
 			break
 		}
 
-		if c.waitForIrcReady(waitWindow) {
+		if server.waitForIrcReady(waitWindow) {
 			return true
 		}
 	}
 
-	return c.waitForIrcReady(0)
+	return server.waitForIrcReady(0)
 }
 
-func (c *Client) ensureIrcReadyForRequest() bool {
-	if c.waitForIrcReady(0) {
+func (c *Client) ensureIrcReadyForRequest(server *server) bool {
+	if server.waitForIrcReady(0) {
 		return true
 	}
 
@@ -204,7 +187,7 @@ func (c *Client) ensureIrcReadyForRequest() bool {
 		c.log.Printf("Debug: waiting for IRC readiness before processing request (username=%s)", c.irc.Username)
 	}
 
-	if c.waitForIrcReadyWithRetry(ircRequestReadyTimeout) {
+	if server.waitForIrcReadyWithRetry(c, ircRequestReadyTimeout) {
 		return true
 	}
 
@@ -229,11 +212,17 @@ func (c *Client) maybeRotateUsername(server *server, allowRotation bool) bool {
 
 // handle SearchRequests and send the query to the book server
 func (c *Client) sendSearchRequest(s *SearchRequest, server *server) {
-	if !c.ensureIrcReadyForRequest() {
+	if !c.ensureIrcReadyForRequest(server) {
 		return
 	}
 
 	if !c.maybeRotateUsername(server, server.consumeRotateOnNextSearch()) {
+		return
+	}
+
+	ircConn := server.sharedIrcConn()
+	if ircConn == nil {
+		c.send <- newErrorResponse("Unable to connect to IRC server.")
 		return
 	}
 
@@ -249,7 +238,8 @@ func (c *Client) sendSearchRequest(s *SearchRequest, server *server) {
 		return
 	}
 
-	core.SearchBook(c.irc, server.config.SearchBot, s.Query)
+	server.setCurrentSearchUser(c.uuid)
+	core.SearchBook(ircConn, server.config.SearchBot, s.Query)
 	server.markRequestForRotation()
 	server.lastSearch = time.Now()
 
@@ -258,7 +248,7 @@ func (c *Client) sendSearchRequest(s *SearchRequest, server *server) {
 
 // handle DownloadRequests by sending the request to the book server
 func (c *Client) sendDownloadRequest(d *DownloadRequest, server *server) {
-	if !c.ensureIrcReadyForRequest() {
+	if !c.ensureIrcReadyForRequest(server) {
 		return
 	}
 
@@ -266,12 +256,89 @@ func (c *Client) sendDownloadRequest(d *DownloadRequest, server *server) {
 		return
 	}
 
-	if d.Author != "" || d.Title != "" {
-		c.queueDownloadMetadata(downloadMetadata{Author: d.Author, Title: d.Title})
-	} else {
-		c.queueDownloadMetadata(parseDownloadMetadata(d.Book))
+	ircConn := server.sharedIrcConn()
+	if ircConn == nil {
+		c.send <- newErrorResponse("Unable to connect to IRC server.")
+		return
 	}
-	core.DownloadBook(c.irc, d.Book)
+
+	metadata := downloadMetadata{}
+	if d.Author != "" || d.Title != "" {
+		metadata = downloadMetadata{Author: d.Author, Title: d.Title}
+	} else {
+		metadata = parseDownloadMetadata(d.Book)
+	}
+	server.enqueueDownload(c.uuid, metadata)
+	core.DownloadBook(ircConn, d.Book)
 	server.markRequestForRotation()
 	c.send <- newStatusResponse(NOTIFY, "Download request received.")
+}
+
+func (server *server) ensureSharedConnection(client *Client) error {
+	deadline := time.Now().Add(ircReadyTimeout)
+
+	for {
+		server.ircMutex.Lock()
+		if server.ircConn != nil && server.ircReadySet {
+			server.ircMutex.Unlock()
+			return nil
+		}
+
+		if server.ircConnecting {
+			server.ircMutex.Unlock()
+			if time.Now().After(deadline) {
+				return errors.New("unable to connect to IRC server")
+			}
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		username := server.config.UserName
+		if server.config.AssignRandomUsernameAfter > 0 && username == "" {
+			username = randomUsername(12)
+		}
+		newConn := irc.New(username, server.config.UserAgent)
+		server.ircConn = newConn
+		server.ircConnecting = true
+		server.ircReady = make(chan struct{})
+		server.ircReadySet = false
+		server.ircMutex.Unlock()
+
+		if client != nil && client.debug {
+			client.log.Printf("Debug: connecting to IRC server=%s tls=%t username=%s", server.config.Server, server.config.EnableTLS, newConn.Username)
+		}
+
+		err := joinIRC(newConn, server.config.Server, server.config.EnableTLS)
+		if err != nil {
+			if client != nil {
+				client.log.Printf("Error connecting to IRC server=%s username=%s: %v", server.config.Server, newConn.Username, err)
+			}
+			server.log.Printf("Error connecting to IRC server=%s username=%s: %v", server.config.Server, newConn.Username, err)
+			server.ircMutex.Lock()
+			server.ircConn = nil
+			server.ircConnecting = false
+			server.ircMutex.Unlock()
+			return errors.New("unable to connect to IRC server")
+		}
+
+		go startIRCReader(context.Background(), newConn, server.NewIrcEventHandler())
+
+		ready := server.waitForIrcReadyWithRetry(client, ircReadyTimeout)
+
+		server.ircMutex.Lock()
+		server.ircConnecting = false
+		server.ircMutex.Unlock()
+
+		if !ready {
+			newConn.Disconnect()
+			server.ircMutex.Lock()
+			if server.ircConn == newConn {
+				server.ircConn = nil
+			}
+			server.ircMutex.Unlock()
+			return errors.New("unable to join #ebooks. try reconnecting")
+		}
+
+		return nil
+	}
 }
