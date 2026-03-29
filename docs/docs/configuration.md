@@ -69,6 +69,7 @@ These options apply to both Server and CLI mode.
 - The hook inherits container environment variables and receives these additional variables: `OPENBOOKS_FILE_PATH`, `OPENBOOKS_FILENAME`, `OPENBOOKS_AUTHOR`, and `OPENBOOKS_TITLE`.
 - The hook is executed directly, so the configured value must be an executable path (it does not parse shell arguments).
 - Hook failures or timeouts are logged and do not interrupt download delivery.
+- For full interface details and notification output format, see [Post-Download Hooks](post-download-hooks.md).
 
 `--assign-random-username-after` notes:
 

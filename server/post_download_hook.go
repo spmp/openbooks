@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,8 @@ import (
 )
 
 var runHookCommand = executeHookCommand
+
+const hookNotifyPrefix = "OPENBOOKS_NOTIFY "
 
 func parseDownloadMetadata(identifier string) downloadMetadata {
 	identifier = strings.TrimSpace(identifier)
@@ -55,9 +58,16 @@ func (c *Client) runPostDownloadHook(scriptPath string, timeout time.Duration, f
 
 	output, timedOut, err := runHookCommand(scriptPath, timeout, filePath, metadata)
 	trimmedOutput := strings.TrimSpace(string(output))
+	c.sendHookNotifications(output)
 
 	if timedOut {
 		c.log.Printf("post-download-hook timed out after %s: %s", timeout, scriptPath)
+		c.send <- StatusResponse{
+			MessageType:      STATUS,
+			NotificationType: DANGER,
+			Title:            "Post-download hook timed out.",
+			Detail:           fmt.Sprintf("%s %s was terminated after %s", scriptPath, filePath, timeout),
+		}
 		c.logHookScriptDetails(scriptPath)
 		if trimmedOutput != "" {
 			c.log.Printf("post-download-hook output: %s", trimmedOutput)
@@ -77,6 +87,64 @@ func (c *Client) runPostDownloadHook(scriptPath string, timeout time.Duration, f
 
 	if trimmedOutput != "" {
 		c.log.Printf("post-download-hook output: %s", trimmedOutput)
+	}
+}
+
+type hookNotification struct {
+	Level  string `json:"level"`
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
+}
+
+func (c *Client) sendHookNotifications(output []byte) {
+	if len(output) == 0 {
+		return
+	}
+
+	count := 0
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, hookNotifyPrefix) {
+			continue
+		}
+
+		if count >= 10 {
+			c.log.Printf("post-download-hook notification limit reached; ignoring additional notifications")
+			return
+		}
+
+		payload := strings.TrimPrefix(line, hookNotifyPrefix)
+		notification := hookNotification{}
+		if err := json.Unmarshal([]byte(payload), &notification); err != nil {
+			c.log.Printf("post-download-hook notify parse error: %v", err)
+			continue
+		}
+
+		title := strings.TrimSpace(notification.Title)
+		if title == "" {
+			title = "Post-download hook message"
+		}
+
+		response := StatusResponse{
+			MessageType:      STATUS,
+			NotificationType: mapHookLevel(notification.Level),
+			Title:            title,
+			Detail:           strings.TrimSpace(notification.Detail),
+		}
+		c.send <- response
+		count++
+	}
+}
+
+func mapHookLevel(level string) NotificationType {
+	level = strings.ToLower(strings.TrimSpace(level))
+	switch level {
+	case "warning", "warn":
+		return WARNING
+	case "error", "err":
+		return DANGER
+	default:
+		return SUCCESS
 	}
 }
 
@@ -119,7 +187,6 @@ func executeHookCommand(scriptPath string, timeout time.Duration, filePath strin
 		return append(stdout.Bytes(), stderr.Bytes()...), true, context.DeadlineExceeded
 	}
 }
-
 func (c *Client) logHookScriptDetails(scriptPath string) {
 	info, err := os.Stat(scriptPath)
 	if err != nil {

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"io"
 	"log"
@@ -139,5 +140,113 @@ func TestRunPostDownloadHookQueuesByWorkerLimit(t *testing.T) {
 
 	if elapsed := time.Since(start); elapsed < 250*time.Millisecond {
 		t.Fatalf("expected queued hook execution, elapsed=%s", elapsed)
+	}
+}
+
+func TestRunPostDownloadHookSendsNotificationsFromOutput(t *testing.T) {
+	originalRunner := runHookCommand
+	defer func() {
+		runHookCommand = originalRunner
+	}()
+
+	runHookCommand = func(_ string, _ time.Duration, _ string, _ downloadMetadata) ([]byte, bool, error) {
+		output := strings.Join([]string{
+			"OPENBOOKS_NOTIFY {\"level\":\"info\",\"title\":\"Processed\",\"detail\":\"All good\"}",
+			"OPENBOOKS_NOTIFY {\"level\":\"warning\",\"title\":\"Skipped\",\"detail\":\"Missing tag\"}",
+			"OPENBOOKS_NOTIFY {\"level\":\"error\",\"title\":\"Failed\",\"detail\":\"Move failed\"}",
+		}, "\n")
+		return []byte(output), false, nil
+	}
+
+	client := &Client{
+		log:               log.New(io.Discard, "", 0),
+		hookWorkerLimiter: make(chan struct{}, 1),
+		send:              make(chan interface{}, 8),
+	}
+
+	client.runPostDownloadHook("ignored", time.Second, "/tmp/book.epub", downloadMetadata{})
+
+	if len(client.send) != 3 {
+		t.Fatalf("expected 3 notifications, got %d", len(client.send))
+	}
+
+	first := (<-client.send).(StatusResponse)
+	second := (<-client.send).(StatusResponse)
+	third := (<-client.send).(StatusResponse)
+
+	if first.NotificationType != SUCCESS || first.Title != "Processed" {
+		t.Fatalf("unexpected first notification: %+v", first)
+	}
+	if second.NotificationType != WARNING || second.Title != "Skipped" {
+		t.Fatalf("unexpected second notification: %+v", second)
+	}
+	if third.NotificationType != DANGER || third.Title != "Failed" {
+		t.Fatalf("unexpected third notification: %+v", third)
+	}
+}
+
+func TestRunPostDownloadHookIgnoresMalformedNotifications(t *testing.T) {
+	originalRunner := runHookCommand
+	defer func() {
+		runHookCommand = originalRunner
+	}()
+
+	runHookCommand = func(_ string, _ time.Duration, _ string, _ downloadMetadata) ([]byte, bool, error) {
+		output := strings.Join([]string{
+			"OPENBOOKS_NOTIFY {not-json}",
+			"OPENBOOKS_NOTIFY {\"level\":\"warn\",\"title\":\"Valid\"}",
+		}, "\n")
+		return []byte(output), false, nil
+	}
+
+	client := &Client{
+		log:               log.New(io.Discard, "", 0),
+		hookWorkerLimiter: make(chan struct{}, 1),
+		send:              make(chan interface{}, 4),
+	}
+
+	client.runPostDownloadHook("ignored", time.Second, "/tmp/book.epub", downloadMetadata{})
+
+	if len(client.send) != 1 {
+		t.Fatalf("expected only one valid notification, got %d", len(client.send))
+	}
+
+	notify := (<-client.send).(StatusResponse)
+	if notify.NotificationType != WARNING || notify.Title != "Valid" {
+		t.Fatalf("unexpected notification: %+v", notify)
+	}
+}
+
+func TestRunPostDownloadHookTimeoutSendsFailureNotification(t *testing.T) {
+	originalRunner := runHookCommand
+	defer func() {
+		runHookCommand = originalRunner
+	}()
+
+	runHookCommand = func(_ string, _ time.Duration, _ string, _ downloadMetadata) ([]byte, bool, error) {
+		return []byte(""), true, context.DeadlineExceeded
+	}
+
+	client := &Client{
+		log:               log.New(io.Discard, "", 0),
+		hookWorkerLimiter: make(chan struct{}, 1),
+		send:              make(chan interface{}, 2),
+	}
+
+	client.runPostDownloadHook("/opt/hooks/process.py", 2*time.Second, "/books/book.epub", downloadMetadata{})
+
+	if len(client.send) != 1 {
+		t.Fatalf("expected timeout notification, got %d messages", len(client.send))
+	}
+
+	status, ok := (<-client.send).(StatusResponse)
+	if !ok {
+		t.Fatal("expected status response for timeout")
+	}
+	if status.NotificationType != DANGER {
+		t.Fatalf("expected danger notification, got %v", status.NotificationType)
+	}
+	if !strings.Contains(status.Detail, "/opt/hooks/process.py /books/book.epub") {
+		t.Fatalf("unexpected timeout detail: %q", status.Detail)
 	}
 }

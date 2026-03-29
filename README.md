@@ -88,9 +88,21 @@ Use `--post-download-hook` to run an executable after each completed server-side
   - `--post-download-hook-timeout` (default `20` seconds)
   - `--post-download-hook-workers` (default `1`, queued execution)
 
+Hook script notifications:
+
+- Hook output is parsed when script execution completes.
+- To send popup notifications, print lines in this format:
+  - `OPENBOOKS_NOTIFY {"level":"info|warning|error","title":"...","detail":"..."}`
+- Timeout behavior:
+  - If hook exceeds timeout, OpenBooks terminates it and sends an error notification.
+
 Example:
 
 - `./openbooks server --post-download-hook /opt/hooks/ebook.sh --post-download-hook-timeout 30 --post-download-hook-workers 2`
+
+Detailed docs (interface, output format, Docker + Python venv setup, packaging hooks from git):
+
+- `docs/docs/post-download-hooks.md`
 
 ## Random Username Rotation
 
