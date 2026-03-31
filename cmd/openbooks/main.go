@@ -61,7 +61,16 @@ func init() {
 var desktopCmd = &cobra.Command{
 	Use:   "openbooks",
 	Short: "Quickly and easily download eBooks from IRCHighway.",
-	Long:  "Runs OpenBooks in desktop mode. This allows you to run OpenBooks like a regular desktop application. This functionality utilizes your OS's native browser renderer and as such may not work on certain operating systems.",
+	Long: "Runs OpenBooks in desktop mode by default.\n\n" +
+		"Mode-specific flags are shown in subcommand help:\n" +
+		"  - openbooks server --help   (server-only flags like --persist, --browser, --no-browser-downloads)\n" +
+		"  - openbooks cli --help      (CLI mode flags)\n\n" +
+		"Defaults by mode:\n" +
+		"  - Desktop mode (--help here): --dir defaults to ~/Downloads\n" +
+		"  - Server mode: --dir defaults to /books and --port defaults to 5228",
+	Example: "openbooks --help\n" +
+		"openbooks server --help\n" +
+		"openbooks cli --help",
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		if err := applyGlobalEnvFlags(cmd); err != nil {
 			return err

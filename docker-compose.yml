@@ -1,0 +1,15 @@
+services:
+  openbooks:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: openbooks-dev
+    ports:
+      - '5228:5228'
+    volumes:
+      - './books:/books'
+    environment:
+      - OPENBOOKS_NO_BROWSER_DOWNLOADS=True
+      - OPENBOOKS_PERSIST=True
+      - OPENBOOKS_DIR=/books
+
