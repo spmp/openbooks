@@ -4,6 +4,7 @@ import { enableMapSet } from "immer";
 import throttle from "lodash/throttle";
 import { TypedUseSelectorHook, useDispatch, useSelector } from "react-redux";
 import { openbooksApi } from "./api";
+import downloadHistoryReducer from "./downloadHistorySlice";
 import historyReducer from "./historySlice";
 import notificationReducer from "./notificationSlice";
 import { websocketConn } from "./socketMiddleware";
@@ -16,6 +17,7 @@ export const store = configureStore({
   reducer: {
     state: stateReducer,
     history: historyReducer,
+    downloadHistory: downloadHistoryReducer,
     notifications: notificationReducer,
     [openbooksApi.reducerPath]: openbooksApi.reducer
   },
@@ -39,6 +41,7 @@ store.subscribe(
   throttle(() => {
     saveState("history", store.getState().history.items);
     saveState("active", store.getState().state.activeItem);
+    saveState("downloads", store.getState().downloadHistory.items);
   }, 1000)
 );
 

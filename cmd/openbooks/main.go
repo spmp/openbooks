@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/evan-buss/openbooks/desktop"
@@ -36,7 +37,6 @@ var desktopConfig server.Config
 func init() {
 	desktopCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Enable debug mode.")
 	desktopCmd.PersistentFlags().StringVarP(&globalFlags.UserName, "name", "n", "", "Username used to connect to IRC server.")
-	desktopCmd.MarkPersistentFlagRequired("name")
 	desktopCmd.PersistentFlags().StringVarP(&globalFlags.Server, "server", "s", "irc.irchighway.net:6697", "IRC server to connect to.")
 	desktopCmd.PersistentFlags().BoolVar(&globalFlags.EnableTLS, "tls", true, "Connect to server using TLS.")
 	desktopCmd.PersistentFlags().BoolVarP(&globalFlags.Log, "log", "l", false, "Save raw IRC logs for each client connection.")
@@ -52,19 +52,61 @@ func init() {
 	desktopCmd.Flags().StringVarP(&desktopConfig.Port, "port", "p", "5228", "Set the local network port for browser mode.")
 	desktopCmd.Flags().IntP("rate-limit", "r", 10, "The number of seconds to wait between searches to reduce strain on IRC search servers. Minimum is 10 seconds.")
 	desktopCmd.Flags().StringVarP(&desktopConfig.DownloadDir, "dir", "d", downloadDir, "The directory where eBooks are saved.")
+	desktopCmd.Flags().StringVar(&desktopConfig.PostDownloadHook, "post-download-hook", "", "Executable path to run after a book download completes.")
+	desktopCmd.Flags().Int("post-download-hook-timeout", 20, "Seconds to wait before terminating post-download-hook.")
+	desktopCmd.Flags().Int("post-download-hook-workers", 1, "Maximum number of post-download-hook processes running at once.")
+	desktopCmd.Flags().Int("assign-random-username-after", 0, "Rotate to a random IRC username after N searches and downloads. Disabled when set to 0.")
 }
 
 var desktopCmd = &cobra.Command{
 	Use:   "openbooks",
 	Short: "Quickly and easily download eBooks from IRCHighway.",
-	Long:  "Runs OpenBooks in desktop mode. This allows you to run OpenBooks like a regular desktop application. This functionality utilizes your OS's native browser renderer and as such may not work on certain operating systems.",
-	PreRun: func(cmd *cobra.Command, args []string) {
+	Long: "Runs OpenBooks in desktop mode by default.\n\n" +
+		"Mode-specific flags are shown in subcommand help:\n" +
+		"  - openbooks server --help   (server-only flags like --persist, --browser, --no-browser-downloads)\n" +
+		"  - openbooks cli --help      (CLI mode flags)\n\n" +
+		"Defaults by mode:\n" +
+		"  - Desktop mode (--help here): --dir defaults to ~/Downloads\n" +
+		"  - Server mode: --dir defaults to /books and --port defaults to 5228",
+	Example: "openbooks --help\n" +
+		"openbooks server --help\n" +
+		"openbooks cli --help",
+	PreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := applyGlobalEnvFlags(cmd); err != nil {
+			return err
+		}
+		if err := applyServerModeEnvFlags(cmd); err != nil {
+			return err
+		}
+
+		assignRandomAfter, _ := cmd.Flags().GetInt("assign-random-username-after")
+		desktopConfig.AssignRandomUsernameAfter = assignRandomAfter
+
+		if err := applyUsernamePolicy(assignRandomAfter, &globalFlags.UserName); err != nil {
+			return err
+		}
+
 		bindGlobalServerFlags(&desktopConfig)
 		rateLimit, _ := cmd.Flags().GetInt("rate-limit")
+		hookTimeout, _ := cmd.Flags().GetInt("post-download-hook-timeout")
+		hookWorkers, _ := cmd.Flags().GetInt("post-download-hook-workers")
+		if hookTimeout < 1 {
+			hookTimeout = 20
+		}
+		if hookWorkers < 1 {
+			hookWorkers = 1
+		}
+		if desktopConfig.AssignRandomUsernameAfter < 0 {
+			desktopConfig.AssignRandomUsernameAfter = 0
+		}
+		desktopConfig.PostDownloadHookTimeout = time.Duration(hookTimeout) * time.Second
+		desktopConfig.PostDownloadHookWorkers = hookWorkers
 		ensureValidRate(rateLimit, &desktopConfig)
 		desktopConfig.DisableBrowserDownloads = true
 		desktopConfig.Basepath = "/"
 		desktopConfig.Persist = true
+
+		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		if debug {

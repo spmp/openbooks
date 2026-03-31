@@ -53,7 +53,9 @@ type SearchRequest struct {
 
 // DownloadRequest is a request to download a specific book from the IRC server
 type DownloadRequest struct {
-	Book string `json:"book"`
+	Book   string `json:"book"`
+	Author string `json:"author"`
+	Title  string `json:"title"`
 }
 
 // ConnectionResponse
@@ -92,6 +94,14 @@ func newRateLimitResponse(remainingSeconds float64) StatusResponse {
 }
 
 func newSearchResponse(results []core.BookDetail, errors []core.ParseError) SearchResponse {
+	notificationType := SUCCESS
+	title := fmt.Sprintf("%v Search Results Received", len(results))
+
+	if len(results) == 0 {
+		notificationType = WARNING
+		title = "No results found for the query."
+	}
+
 	detail := fmt.Sprintf("There were %v parsing errors.", len(errors))
 	if len(errors) == 1 {
 		detail = "There was 1 parsing error."
@@ -99,8 +109,8 @@ func newSearchResponse(results []core.BookDetail, errors []core.ParseError) Sear
 	return SearchResponse{
 		StatusResponse: StatusResponse{
 			MessageType:      SEARCH,
-			NotificationType: SUCCESS,
-			Title:            fmt.Sprintf("%v Search Results Received", len(results)),
+			NotificationType: notificationType,
+			Title:            title,
 			Detail:           detail,
 		},
 		Books:  results,

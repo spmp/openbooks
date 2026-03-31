@@ -5,7 +5,7 @@ import {
   MiddlewareAPI,
   PayloadAction
 } from "@reduxjs/toolkit";
-import { openbooksApi } from "./api";
+import { addDownloadHistoryItem } from "./downloadHistorySlice";
 import { deleteHistoryItem } from "./historySlice";
 import {
   ConnectionResponse,
@@ -18,6 +18,7 @@ import {
 } from "./messages";
 import { addNotification } from "./notificationSlice";
 import {
+  removePendingDownloadLabel,
   removeInFlightDownload,
   sendMessage,
   setConnectionState,
@@ -37,7 +38,7 @@ export const websocketConn =
 
     socket.onopen = () => onOpen(dispatch);
     socket.onclose = () => onClose(dispatch);
-    socket.onmessage = (message) => route(dispatch, message);
+    socket.onmessage = (message) => route(dispatch, getState, message);
     socket.onerror = (event) =>
       displayNotification({
         appearance: NotificationType.DANGER,
@@ -65,7 +66,7 @@ export const websocketConn =
 
 const onOpen = (dispatch: AppDispatch): void => {
   console.log("WebSocket connected.");
-  dispatch(setConnectionState(true));
+  dispatch(setConnectionState(false));
   dispatch(sendMessage({ type: MessageType.CONNECT, payload: {} }));
 };
 
@@ -74,7 +75,18 @@ const onClose = (dispatch: AppDispatch): void => {
   dispatch(setConnectionState(false));
 };
 
-const route = (dispatch: AppDispatch, msg: MessageEvent<any>): void => {
+const route = (
+  dispatch: AppDispatch,
+  getState: () => RootState,
+  msg: MessageEvent<any>
+): void => {
+  const fileNameFromPath = (input?: string): string => {
+    if (!input) return "";
+    const normalized = input.replace(/\\/g, "/");
+    const parts = normalized.split("/").filter((x) => x.length > 0);
+    return parts.length === 0 ? input : parts[parts.length - 1];
+  };
+
   const getNotif = (): Notification => {
     let response = JSON.parse(msg.data) as Response;
     const timestamp = new Date().getTime();
@@ -85,16 +97,59 @@ const route = (dispatch: AppDispatch, msg: MessageEvent<any>): void => {
 
     switch (response.type) {
       case MessageType.STATUS:
+        if (
+          response.appearance === NotificationType.DANGER &&
+          response.title.toLowerCase().includes("unable to join #ebooks")
+        ) {
+          dispatch(setConnectionState(false));
+          dispatch(setUsername(""));
+        }
         return notification;
       case MessageType.CONNECT:
+        dispatch(setConnectionState(true));
         dispatch(setUsername((response as ConnectionResponse).name));
         return notification;
       case MessageType.SEARCH:
         dispatch(setSearchResults(response as SearchResponse));
         return notification;
       case MessageType.DOWNLOAD:
-        downloadFile((response as DownloadResponse)?.downloadPath);
-        dispatch(openbooksApi.util.invalidateTags(["books"]));
+        const download = response as DownloadResponse;
+        const state = getState();
+        const pendingLabel = state.state.pendingDownloadLabels[0];
+        const fileName = fileNameFromPath(
+          download.downloadPath || download.detail
+        );
+
+        let displayName = fileName || download.detail || "Downloaded file";
+        if (pendingLabel && (pendingLabel.title || pendingLabel.author)) {
+          const title = (pendingLabel.title || "").trim();
+          const authors = (pendingLabel.author || "").trim();
+
+          const parts = [] as string[];
+          if (title) {
+            parts.push(title);
+          }
+          if (authors) {
+            parts.push(authors);
+          }
+          if (fileName) {
+            parts.push(fileName);
+          }
+
+          if (parts.length > 0) {
+            displayName = parts.join(" - ");
+          }
+        }
+
+        dispatch(
+          addDownloadHistoryItem({
+            name: displayName,
+            downloadPath: download.downloadPath,
+            timestamp
+          })
+        );
+        downloadFile(download.downloadPath);
+        dispatch(removePendingDownloadLabel());
         dispatch(removeInFlightDownload());
         return notification;
       case MessageType.RATELIMIT:

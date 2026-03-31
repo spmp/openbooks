@@ -64,7 +64,7 @@ function HistoryCard({ activeTS, item, dispatch }: Props) {
   const isActive = activeTS === item.timestamp;
   const { classes } = useSidebarButtonStyle({ isActive });
 
-  const loading = !item.results?.length && !item.errors?.length;
+  const loading = item.results === undefined && item.errors === undefined;
 
   return (
     <Menu shadow="md">

@@ -60,9 +60,9 @@ func (server *server) serveWs() http.HandlerFunc {
 		userId, err := uuid.Parse(cookie.Value)
 		_, alreadyConnected := server.clients[userId]
 
-		// If invalid UUID or the same browser tries to connect again or multiple browser connections
-		// Don't connect to IRC or create new client
-		if err != nil || alreadyConnected || len(server.clients) > 0 {
+		// If invalid UUID or the same browser tries to connect again
+		// don't create duplicate clients for the same cookie.
+		if err != nil || alreadyConnected {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -77,13 +77,21 @@ func (server *server) serveWs() http.HandlerFunc {
 			return
 		}
 
+		hookWorkers := server.config.PostDownloadHookWorkers
+		if hookWorkers < 1 {
+			hookWorkers = 1
+		}
+
 		client := &Client{
-			conn: conn,
-			send: make(chan interface{}, 128),
-			uuid: userId,
-			irc:  irc.New(server.config.UserName, server.config.UserAgent),
-			log:  log.New(os.Stdout, fmt.Sprintf("CLIENT (%s): ", server.config.UserName), log.LstdFlags|log.Lmsgprefix),
-			ctx:  context.Background(),
+			conn:              conn,
+			send:              make(chan interface{}, 128),
+			uuid:              userId,
+			irc:               irc.New(server.config.UserName, server.config.UserAgent),
+			log:               log.New(os.Stdout, fmt.Sprintf("CLIENT (%s): ", server.config.UserName), log.LstdFlags|log.Lmsgprefix),
+			debug:             server.config.Debug,
+			ctx:               context.Background(),
+			hookWorkerLimiter: make(chan struct{}, hookWorkers),
+			ircReady:          make(chan struct{}),
 		}
 
 		server.log.Printf("Client connected from %s\n", conn.RemoteAddr().String())
@@ -145,12 +153,12 @@ func (server *server) getAllBooksHandler() http.HandlerFunc {
 	}
 
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !server.config.Persist {
+		if !server.config.Persist && !server.config.DisableBrowserDownloads {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 
-		libraryDir := filepath.Join(server.config.DownloadDir, "books")
+		libraryDir := server.config.DownloadDir
 		books, err := os.ReadDir(libraryDir)
 		if err != nil {
 			server.log.Printf("Unable to list books. %s\n", err)
@@ -184,7 +192,7 @@ func (server *server) getAllBooksHandler() http.HandlerFunc {
 func (server *server) getBookHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, fileName := path.Split(r.URL.Path)
-		bookPath := filepath.Join(server.config.DownloadDir, "books", fileName)
+		bookPath := filepath.Join(server.config.DownloadDir, fileName)
 
 		http.ServeFile(w, r, bookPath)
 
@@ -205,7 +213,7 @@ func (server *server) deleteBooksHandler() http.HandlerFunc {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 
-		err = os.Remove(filepath.Join(server.config.DownloadDir, "books", fileName))
+		err = os.Remove(filepath.Join(server.config.DownloadDir, fileName))
 		if err != nil {
 			server.log.Printf("Error deleting book file: %s\n", err)
 			w.WriteHeader(http.StatusInternalServerError)

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/evan-buss/openbooks/irc"
@@ -49,8 +50,94 @@ type Client struct {
 
 	log *log.Logger
 
+	debug bool
+
 	// Context is used to signal when this client should close.
 	ctx context.Context
+
+	pendingDownloadsMutex sync.Mutex
+	pendingDownloads      []downloadMetadata
+
+	hookWorkerLimiter chan struct{}
+
+	ircReadyMutex sync.Mutex
+	ircReady      chan struct{}
+	ircReadySet   bool
+}
+
+type downloadMetadata struct {
+	Author string
+	Title  string
+}
+
+func (c *Client) queueDownloadMetadata(metadata downloadMetadata) {
+	c.pendingDownloadsMutex.Lock()
+	defer c.pendingDownloadsMutex.Unlock()
+
+	c.pendingDownloads = append(c.pendingDownloads, metadata)
+}
+
+func (c *Client) nextDownloadMetadata() downloadMetadata {
+	c.pendingDownloadsMutex.Lock()
+	defer c.pendingDownloadsMutex.Unlock()
+
+	if len(c.pendingDownloads) == 0 {
+		return downloadMetadata{}
+	}
+
+	metadata := c.pendingDownloads[0]
+	c.pendingDownloads = c.pendingDownloads[1:]
+	return metadata
+}
+
+func (c *Client) resetIrcReady() {
+	c.ircReadyMutex.Lock()
+	defer c.ircReadyMutex.Unlock()
+
+	c.ircReady = make(chan struct{})
+	c.ircReadySet = false
+}
+
+func (c *Client) markIrcReady() {
+	c.ircReadyMutex.Lock()
+	defer c.ircReadyMutex.Unlock()
+
+	if c.ircReadySet {
+		return
+	}
+
+	if c.ircReady == nil {
+		c.ircReady = make(chan struct{})
+	}
+
+	close(c.ircReady)
+	c.ircReadySet = true
+}
+
+func (c *Client) waitForIrcReady(timeout time.Duration) bool {
+	c.ircReadyMutex.Lock()
+	ready := c.ircReady
+	c.ircReadyMutex.Unlock()
+
+	if ready == nil {
+		return true
+	}
+
+	if timeout <= 0 {
+		select {
+		case <-ready:
+			return true
+		default:
+			return false
+		}
+	}
+
+	select {
+	case <-ready:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -60,7 +147,6 @@ type Client struct {
 // reads from this goroutine.
 func (server *server) readPump(c *Client) {
 	defer func() {
-		c.irc.Disconnect()
 		c.conn.Close()
 		server.unregister <- c
 	}()
