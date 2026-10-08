@@ -4,7 +4,7 @@
 
 > NOTE: Going forward only the latest release will be supported. If you encounter any issues, be sure you are using the latest version.
 
-Openbooks allows you to download ebooks from irc.irchighway.net quickly and easily.
+Openbooks allows you to download ebooks from irc.irchighway.net quickly and easily, in particular this fork includes scripts to add downloaded books to your Kavita library.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./.github/home_v3_dark.png">
@@ -48,7 +48,13 @@ docker run --rm -p 8080:5228 -v /home/evan/Downloads/openbooks:/books ghcr.io/sp
 
 To integrate Openbooks into your media stack it is recommended to use `docker-compose`.
 This example includes Docker _labels_ for Traefik (proxy) and Authelia (authentication),
-downloads books into a staging location `/Media/EBooks-incoming` which the post-download hook script processes into `/Media/EBooks` and triggers a Kavita scan on move.
+downloads books into a staging location `/Media/EBooks-incoming` which the post-download hook script
+ processes into `/Media/EBooks` and triggers a Kavita scan on move.
+
+The Kavita move script requires a metadata service for which the simplest and highest quality is
+_rreading-glasses_ (https://github.com/blampe/rreading-glasses) - the public API is overwhelmed and
+it's recommended to get a FREE Hardcover account and API key and host your own. This is included in
+the snippet below. See [this aspirational guide](https://github.com/blampe/rreading-glasses#hardcover-auth)
 
 ```yml
 services:
@@ -79,10 +85,58 @@ services:
       traefik.http.routers.openbooks.middlewares: auth@file
       traefik.http.routers.openbooks.entryPoints: https
     restart: unless-stopped
+
+  rreading-glasses:
+    depends_on:
+      rreading-glasses-db:
+        condition: service_started  
+    image: blampe/rreading-glasses:hardcover
+    pull_policy: always
+    container_name: rreading-glasses
+    hostname: rreading-glasses
+    entrypoint: ["/main", "serve"]
+    command:
+      - --verbose
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      HARDCOVER_AUTH: "Bearer API-key..."
+      POSTGRES_HOST: rreading-glasses-db
+      POSTGRES_DATABASE: rreading-glasses
+      POSTGRES_USER: rreading-glasses
+      POSTGRES_PASSWORD: postgres
+    networks:
+      - your-proxy-network
+
+  rreading-glasses-db:
+    image: postgres:17
+    container_name: rreading-glasses-db
+    hostname: rreading-glasses-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: rreading-glasses
+      POSTGRES_PASSWORD:  postgres
+      POSTGRES_DB: rreading-glasses
+    volumes:
+      - /srv/containers/volumes/rreading_glasses_data:/var/lib/postgresql/data
+    networks:
+      - your-proxy-network
+
+networks:
+  your-proxy-network:
+    external: true
 ```
-NOTE: The `EBBOK_...` env-vars are used by the `ebook-resolve-move` script.
+NOTE: The `EBOOK_...` env-vars are used by the `ebook-resolve-move` script.
     
 The included [docker-compose.yml](docker-compose.yml) builds and runs a basic server mode for use/testing
+
+### Manual cleanup
+When a post-download script fails for whatever reason the ebook(s) collect in the incoming directory - this is often due to metadata issues and such like.
+In order to trigger a manual scan and move of the bookes in the incoming directory do the following:
+
+```bash
+docker compose -f /path/to/openbooks.yml exec openbooks ebook-resolve-move --initial-scan --watch-directory /Media/Ebooks-incoming
+```
 
 ### Binary
 
